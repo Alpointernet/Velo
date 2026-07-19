@@ -17,7 +17,7 @@ Most text editors are usually either too simple, or too bloated that you need to
 - **Lightweight:** It opens the second you click it, and consumes very little memory.
 - **Clean Dark Aesthetic:** Every interface element is intentional.
 - **Typographic Clarity:** Uses different fonts for editing and the GUI.
-- **Fluid Coding Usability:** Features like smart brace/quote auto-closing, bracket selection wrapping, character deletion helpers
+- **Coding Usability:** Basic coding features you would expect are here.
 - **State Persistence:** Remembers what you did the last time.
 
 ## Keyboard Shortcuts
