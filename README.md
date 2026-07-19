@@ -5,7 +5,7 @@
 <h1 align="center">Velo</h1>
 
 <p align="center">
-  A minimal, distraction-free text and code editor built for speed and utility.
+  A minimal, fast text and code editor built for Windows.
 </p>
 
 <p align="center">
@@ -16,22 +16,20 @@
 
 ## The Balance: Text Simplicity, Code Power
 
-Most editors force a choice: a basic notepad that lacks essential coding amenities, or a heavy IDE/editor that takes seconds to load, hogs memory, and demands configuration.
+Most editors force a choice between a basic notepad that lacks helper features, or a heavy IDE that takes seconds to load and hogs memory. Velo sits exactly in the middle. It has the startup speed and lightweight footprint of a simple text editor, combined with the core comforts needed to write code comfortably.
 
-Velo is built to be the perfect middle ground. It is as fast and clean as a simple text editor, but loaded with the modern details you expect when writing code.
-
-- **Instant Startup:** Launches instantly. No splash screens, no update checks, no background processes. Double-click and you are typing.
-- **Zero Config, Private Fonts:** Ships as a single self-contained setup. It loads professional typography (JetBrains Mono for editor, Inter for UI) privately at runtime without installing them on your system.
-- **Tailored for Dark Mode:** Every single window component—including the title bar, scrollbars, dialogs, and tabs—is custom-drawn to match a premium dark theme. No blinding white flashes on launch or dialog popup.
-- **Usability Focus:** Equipped with smart brace/quote auto-closing, bracket selection wrapping, brace pair deletion, and indent guides. All designed to make editing fluid and natural.
-- **Workspace Memory:** Saves your open tabs, the active tab, and your settings automatically. Reopen Velo and pick up exactly where you left off.
+- **Instant Startup:** No loading screens, splash windows, or telemetry. It opens instantly so you can start typing immediately.
+- **Clean Dark Aesthetic:** Every interface element—including the title bar, scrollbars, tabs, and dialogs—is custom-drawn in a unified dark theme to prevent bright system flashes.
+- **Typographic Clarity:** Loads high-quality fonts (JetBrains Mono for editing, Inter for UI) privately at runtime, ensuring clean readability without cluttering your system fonts.
+- **Fluid Coding Usability:** Features smart brace/quote auto-closing, bracket selection wrapping, character deletion helpers, and indent guides to keep your typing flow uninterrupted.
+- **State Persistence:** Remembers your open tabs, active document, and setting configurations automatically between launches, picking up exactly where you left off.
 
 ## Key Features
 
-- **Languages:** Built-in highlighting for C, C++, Python, and HTML/XML.
-- **Dynamic Scrollbars:** Custom-rendered minimal scrollbars matching the theme color palette.
-- **Inline Find:** Fast, non-obtrusive find bar (`Ctrl+F`).
-- **Real-time Settings:** Toggle features like block cursor, whitespace indicators, auto-braces, and indent guides instantly from settings.
+- **Languages:** Highlighting for C, C++, Python, and HTML/XML.
+- **Custom Scrollbars:** Native custom-painted scrollbars designed to match the theme.
+- **Quick Search:** Inline non-obtrusive find bar (`Ctrl+F`).
+- **Real-time Settings:** Toggle block cursor, guide lines, whitespace rendering, and auto-braces instantly.
 
 ## Keyboard Shortcuts
 
