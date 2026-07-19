@@ -1,0 +1,2 @@
+# Force all .h files to be classified as C++ by GitHub Linguist
+*.h linguist-language=C++
