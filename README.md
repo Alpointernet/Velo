@@ -8,6 +8,8 @@
   A minimal, fast text and code editor built for Windows.
 </p>
 
+<img width="1400" height="800" alt="program" src="https://github.com/user-attachments/assets/4532800a-be64-4d41-926e-7cc5cdb84546" />
+
 ---
 
 ## Key Features
