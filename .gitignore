@@ -1,0 +1,30 @@
+# Build artifacts
+*.exe
+*.dll
+*.obj
+*.res
+*.pdb
+*.ilk
+*.exp
+*.lib
+obj/
+output/
+
+# Scintilla build artifacts
+scintilla/scintilla/bin/
+scintilla/scintilla/win32/*.obj
+scintilla/scintilla/win32/*.pdb
+scintilla/scintilla/win32/*.res
+
+# Generated icon (built from app.png)
+icon/app.ico
+
+# IDE / OS
+.vs/
+*.suo
+*.user
+*.sln
+*.vcxproj*
+Thumbs.db
+Desktop.ini
+.DS_Store

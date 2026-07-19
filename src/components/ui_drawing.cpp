@@ -1,0 +1,312 @@
+#include "../globals.h"
+#include "ui_drawing.h"
+#include "editor.h"
+#include "tabmanager.h"
+#include "dialogs.h"
+
+void FillRectColor(HDC hdc, const RECT& rc, COLORREF color) {
+    SetBkColor(hdc, color);
+    ExtTextOutW(hdc, 0, 0, ETO_OPAQUE, &rc, NULL, 0, NULL);
+}
+
+RECT GetPad(HWND h) {
+    if (!IsZoomed(h)) return { 1, 0, 1, 1 };
+    RECT rc; GetWindowRect(h, &rc);
+    MONITORINFO mi = { sizeof(mi) }; GetMonitorInfoW(MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST), &mi);
+    return { mi.rcWork.left - rc.left, mi.rcWork.top - rc.top, rc.right - mi.rcWork.right, rc.bottom - mi.rcWork.bottom };
+}
+
+void UpdateUI(HWND h) {
+    RECT rc; GetClientRect(h, &rc); RECT pad = GetPad(h);
+    RECT rcTop = { 0, 0, rc.right, pad.top + 70 + EDITOR_TOP_MARGIN }, rcStatus = { 0, rc.bottom - 24, rc.right, rc.bottom };
+    InvalidateRect(h, &rcTop, FALSE); InvalidateRect(h, &rcStatus, FALSE);
+    std::wstring title = (tabs[activeTabIndex].filePath.empty() ? L"Untitled" : tabs[activeTabIndex].filePath) + L" - Velo";
+    SetWindowTextW(h, title.c_str());
+}
+
+void SyncScrollbars() {
+    if (!hwndScintilla || !hwndVScroll || !hwndHScroll) return;
+    RecalculateScrollWidth();
+    RECT rcSci; GetClientRect(hwndScintilla, &rcSci);
+    RECT pad = GetPad(hwndMain);
+    int sciX = pad.left, sciY = pad.top + 70 + EDITOR_TOP_MARGIN;
+
+    int marginW = GetTotalMarginWidth(); 
+    int vLineH = Sci(SCI_TEXTHEIGHT);
+    int vVis = vLineH > 0 ? rcSci.bottom / vLineH : 1;
+    int hVis = rcSci.right - marginW;
+
+    int vTotal = Sci(SCI_GETLINECOUNT);
+    int maxVPos = max(0, vTotal - (int)(vVis * 0.6));
+    if (Sci(SCI_GETFIRSTVISIBLELINE) > maxVPos) {
+        Sci(SCI_SETFIRSTVISIBLELINE, maxVPos);
+    }
+    
+    int vPos = Sci(SCI_GETFIRSTVISIBLELINE);
+
+    bool needV = (vTotal > vVis);
+    bool needH = (Sci(SCI_GETSCROLLWIDTH) > hVis);
+
+    if (needV) {
+        int trackLen = rcSci.bottom - (needH ? CUSTOM_SB_SIZE : 0) - 4;
+        int thumbLen = max(20, (int)((double)vVis / (maxVPos + vVis) * trackLen));
+        int mScroll = maxVPos;
+        int tPos = mScroll > 0 ? min((int)((double)vPos / mScroll * (trackLen - thumbLen)), trackLen - thumbLen) : 0;
+        SetWindowPos(hwndVScroll, HWND_TOP, sciX + rcSci.right - CUSTOM_SB_SIZE - 2, sciY + 2 + tPos, CUSTOM_SB_SIZE, thumbLen, (scrollbarsVisible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW) | SWP_NOACTIVATE);
+    } else ShowWindow(hwndVScroll, SW_HIDE);
+
+    if (needH) {
+        int hTotal = Sci(SCI_GETSCROLLWIDTH);
+        int hPos = Sci(SCI_GETXOFFSET);
+        int trackLen = hVis - (needV ? CUSTOM_SB_SIZE : 0) - 4; 
+        int thumbLen = max(20, (int)((double)hVis / hTotal * trackLen));
+        int mScroll = hTotal - hVis;
+        int tPos = mScroll > 0 ? (int)((double)hPos / mScroll * (trackLen - thumbLen)) : 0;
+        SetWindowPos(hwndHScroll, HWND_TOP, sciX + marginW + 2 + tPos, sciY + rcSci.bottom - CUSTOM_SB_SIZE - 2, thumbLen, CUSTOM_SB_SIZE, (scrollbarsVisible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW) | SWP_NOACTIVATE);
+    } else ShowWindow(hwndHScroll, SW_HIDE);
+}
+
+void ShowScrollbars(HWND h) {
+    scrollbarsVisible = true;
+    SyncScrollbars();
+    SetTimer(h, 1, 1500, NULL);
+}
+
+void ApplyDarkMode(HWND hwnd) {
+    int val = 1; DwmSetWindowAttribute(hwnd, 20, &val, sizeof(val));
+    COLORREF border = 0x003C312C; DwmSetWindowAttribute(hwnd, 34, &border, sizeof(border));
+    if (HMODULE hUxtheme = LoadLibraryExW(L"uxtheme.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32)) {
+        if (auto SetMode = (int(WINAPI*)(int))GetProcAddress(hUxtheme, MAKEINTRESOURCEA(135))) SetMode(1);
+        if (auto AllowDark = (bool(WINAPI*)(HWND, bool))GetProcAddress(hUxtheme, MAKEINTRESOURCEA(133))) AllowDark(hwnd, true);
+        if (auto Flush = (void(WINAPI*)())GetProcAddress(hUxtheme, MAKEINTRESOURCEA(136))) Flush();
+    }
+}
+
+HoverElement HitTest(HWND h, POINT pt) {
+    RECT rc; GetClientRect(h, &rc); RECT pad = GetPad(h);
+    if (pt.y >= pad.top && pt.y < pad.top + 35) {
+        if (pt.x >= rc.right - pad.right - 45 && pt.x < rc.right - pad.right) return HOVER_CLOSE;
+        if (pt.x >= rc.right - pad.right - 90 && pt.x < rc.right - pad.right - 45) return HOVER_MAXIMIZE;
+        if (pt.x >= rc.right - pad.right - 135 && pt.x < rc.right - pad.right - 90) return HOVER_MINIMIZE;
+        if (pt.x >= pad.left + 10 && pt.x < pad.left + 35) return Sci(SCI_CANUNDO) ? HOVER_UNDO : HOVER_NONE;
+        if (pt.x >= pad.left + 35 && pt.x < pad.left + 60) return Sci(SCI_CANREDO) ? HOVER_REDO : HOVER_NONE;
+        
+        int totalW = 0;
+        for (size_t i = 0; i < tabs.size(); ++i) {
+            totalW += GetTabWidth(i);
+        }
+        int startX = pad.left + 70;
+        int maxTabRight = rc.right - pad.right - 135;
+        bool overflow = (startX + totalW > maxTabRight);
+        int tabLimit = overflow ? (maxTabRight - 30) : maxTabRight;
+        
+        int curX = startX;
+        for (size_t i = 0; i < tabs.size(); ++i) {
+            int tabW = GetTabWidth(i);
+            if (curX >= tabLimit) break;
+            if (pt.x >= curX && pt.x < curX + tabW) {
+                if (pt.x >= tabLimit) break;
+                if (pt.x >= curX + tabW - 25 && pt.x < curX + tabW - 5 && pt.y >= pad.top + 8 && pt.y < pad.top + 28) return (HoverElement)(HOVER_TAB_CLOSE_BASE + i);
+                return (HoverElement)(HOVER_TAB_BASE + i);
+            }
+            curX += tabW;
+        }
+        int addTabX = overflow ? tabLimit : (startX + totalW);
+        if (pt.x >= addTabX && pt.x < addTabX + 30) return HOVER_ADD_TAB;
+    }
+    if (pt.y >= rc.bottom - 24 && pt.y < rc.bottom) {
+        if (pt.x >= pad.left && pt.x < pad.left + 30) return HOVER_SETTINGS;
+        if (pt.x >= pad.left + 30 && pt.x < pad.left + 60) return HOVER_SEARCH;
+    }
+    return HOVER_NONE;
+}
+
+void DrawBtn(HDC hdc, RECT rc, const wchar_t* text, bool hover, bool press, bool isClose, HFONT font, bool disabled) {
+    COLORREF textCol = disabled ? 0x443630 : 0xBFB2AB, bgCol = 0; bool hasBg = false;
+    if (!disabled) {
+        if (isClose && hover) { bgCol = press ? 0xF1707A : 0xE81123; textCol = 0xFFFFFF; hasBg = true; }
+        else if (press) { bgCol = 0x51443E; hasBg = true; }
+        else if (hover) { bgCol = 0x3C312C; if (!isClose) textCol = 0xFFFFFF; hasBg = true; }
+    }
+    if (hasBg) FillRectColor(hdc, rc, bgCol);
+    HFONT oldFont = (HFONT)SelectObject(hdc, font); int oldBk = SetBkMode(hdc, TRANSPARENT); SetTextColor(hdc, textCol);
+    DrawTextW(hdc, text, -1, &rc, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+    SetBkMode(hdc, oldBk); SelectObject(hdc, oldFont);
+}
+
+void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
+    RECT pad = GetPad(h);
+    FillRectColor(hdc, { 0, 0, rc.right, pad.top + 35 }, 0x1F1A18);
+    
+    bool canUndo = Sci(SCI_CANUNDO) != 0;
+    bool canRedo = Sci(SCI_CANREDO) != 0;
+    DrawBtn(hdc, { pad.left + 10, pad.top, pad.left + 35, pad.top + 35 }, L"\uE7A7", hoverElement == HOVER_UNDO, pressedElement == HOVER_UNDO, false, hIconFont, !canUndo);
+    DrawBtn(hdc, { pad.left + 35, pad.top, pad.left + 60, pad.top + 35 }, L"\uE7A6", hoverElement == HOVER_REDO, pressedElement == HOVER_REDO, false, hIconFont, !canRedo);
+    
+    int startX = pad.left + 70;
+    int totalW = 0;
+    for (size_t i = 0; i < tabs.size(); ++i) {
+        totalW += GetTabWidth(i);
+    }
+    
+    int maxTabRight = rc.right - pad.right - 135;
+    bool overflow = (startX + totalW > maxTabRight);
+    int tabLimit = overflow ? (maxTabRight - 30) : maxTabRight;
+    
+    // Set clipping region for tab drawing
+    HRGN hRgn = CreateRectRgn(startX, pad.top, tabLimit, pad.top + 36);
+    SelectClipRgn(hdc, hRgn);
+    
+    int curX = startX; HFONT oldFont = (HFONT)SelectObject(hdc, hUIFont);
+    int activeTabLeft = 0, activeTabRight = 0;
+    for (size_t i = 0; i < tabs.size(); ++i) {
+        int tabW = GetTabWidth(i);
+        bool active = (i == activeTabIndex), hover = (hoverElement == HOVER_TAB_BASE + i || hoverElement == HOVER_TAB_CLOSE_BASE + i);
+        
+        FillRectColor(hdc, { curX, pad.top, curX + tabW, pad.top + 35 }, active ? 0x2B2521 : (hover ? 0x2C2825 : 0x1F1A18));
+        FillRectColor(hdc, { curX + tabW - 1, pad.top, curX + tabW, pad.top + 35 }, 0x1F1A18);
+        if (active) {
+            FillRectColor(hdc, { curX, pad.top, curX + tabW - 1, pad.top + 2 }, 0xFF8B52);
+            activeTabLeft = curX; activeTabRight = curX + tabW - 1;
+        }
+        
+        RECT rcText = { curX + 10, pad.top, curX + tabW - 25, pad.top + 35 };
+        SetTextColor(hdc, active ? 0xFFFFFF : 0xBFB2AB); SetBkMode(hdc, TRANSPARENT);
+        DrawTextW(hdc, tabs[i].title.c_str(), -1, &rcText, DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
+        
+        RECT rcClose = { curX + tabW - 22, pad.top + 8, curX + tabW - 6, pad.top + 28 };
+        bool cHover = (hoverElement == HOVER_TAB_CLOSE_BASE + i), cPress = (pressedElement == HOVER_TAB_CLOSE_BASE + i);
+        if (tabs[i].isModified && !cHover) {
+            FillRectColor(hdc, { curX + tabW - 16, pad.top + 14, curX + tabW - 10, pad.top + 20 }, 0xBFB2AB);
+        } else {
+            DrawBtn(hdc, rcClose, L"\uE711", cHover, cPress);
+        }
+        curX += tabW;
+    }
+    
+    // Clear clipping region so we can draw other components normally
+    SelectClipRgn(hdc, NULL);
+    DeleteObject(hRgn);
+    
+    if (activeTabRight > activeTabLeft) {
+        // Only paint active tab lines if the active tab is at least partially visible
+        if (activeTabLeft < tabLimit) {
+            int rightLineLimit = min(activeTabRight, tabLimit);
+            FillRectColor(hdc, { pad.left, pad.top + 35, activeTabLeft, pad.top + 36 }, 0x3C312C);
+            FillRectColor(hdc, { rightLineLimit, pad.top + 35, rc.right - pad.right, pad.top + 36 }, 0x3C312C);
+            FillRectColor(hdc, { activeTabLeft, pad.top + 35, rightLineLimit, pad.top + 36 }, 0x2B2521);
+            FillRectColor(hdc, { activeTabLeft - 1, pad.top, activeTabLeft, pad.top + 36 }, 0x3C312C);
+            if (activeTabRight < tabLimit) {
+                FillRectColor(hdc, { activeTabRight, pad.top, activeTabRight + 1, pad.top + 36 }, 0x3C312C);
+            }
+        } else {
+            FillRectColor(hdc, { pad.left, pad.top + 35, rc.right - pad.right, pad.top + 36 }, 0x3C312C);
+        }
+    } else {
+        FillRectColor(hdc, { pad.left, pad.top + 35, rc.right - pad.right, pad.top + 36 }, 0x3C312C);
+    }
+    
+    int addTabX = overflow ? tabLimit : (startX + totalW);
+    DrawBtn(hdc, { addTabX, pad.top, addTabX + 30, pad.top + 35 }, L"\uE710", hoverElement == HOVER_ADD_TAB, pressedElement == HOVER_ADD_TAB);
+    
+    int btnX = rc.right - pad.right - 135;
+    DrawBtn(hdc, { btnX, pad.top, btnX + 45, pad.top + 35 }, L"\uE921", hoverElement == HOVER_MINIMIZE, pressedElement == HOVER_MINIMIZE);
+    DrawBtn(hdc, { btnX + 45, pad.top, btnX + 90, pad.top + 35 }, IsZoomed(h) ? L"\uE923" : L"\uE922", hoverElement == HOVER_MAXIMIZE, pressedElement == HOVER_MAXIMIZE);
+    DrawBtn(hdc, { btnX + 90, pad.top, btnX + 135, pad.top + 35 }, L"\uE8BB", hoverElement == HOVER_CLOSE, pressedElement == HOVER_CLOSE, true);
+    SelectObject(hdc, oldFont);
+}
+
+void PaintHeaderBar(HWND h, HDC hdc, const RECT& rc) {
+    RECT pad = GetPad(h);
+    FillRectColor(hdc, { 0, pad.top + 36, rc.right, pad.top + 70 }, 0x2B2521);
+    FillRectColor(hdc, { pad.left, pad.top + 69, rc.right - pad.right, pad.top + 70 }, 0x3C312C);
+    std::wstring pathStr = (activeTabIndex < tabs.size()) ? tabs[activeTabIndex].filePath : L"", fileName = pathStr.empty() ? L"Untitled" : GetFileName(pathStr), parentDir = L"";
+    size_t lastSlash = pathStr.find_last_of(L"\\/");
+    if (lastSlash != std::wstring::npos) parentDir = pathStr.substr(0, lastSlash + 1);
+    SetBkMode(hdc, TRANSPARENT); HFONT oldFont = (HFONT)SelectObject(hdc, hUIFont);
+    RECT rcMeasure = { 0 }; DrawTextW(hdc, fileName.c_str(), -1, &rcMeasure, DT_CALCRECT | DT_SINGLELINE);
+    int fileW = rcMeasure.right - rcMeasure.left;
+    RECT rcFile = { pad.left + 15, pad.top + 35, pad.left + 15 + fileW, pad.top + 70 };
+    SetTextColor(hdc, 0xFFFFFF); DrawTextW(hdc, fileName.c_str(), -1, &rcFile, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+    if (!parentDir.empty()) {
+        RECT rcParent = { pad.left + 15 + fileW + 10, pad.top + 35, rc.right - pad.right - 320, pad.top + 70 };
+        SetTextColor(hdc, 0x858585); DrawTextW(hdc, parentDir.c_str(), -1, &rcParent, DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
+    }
+    SelectObject(hdc, oldFont);
+}
+
+void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
+    RECT pad = GetPad(h);
+    FillRectColor(hdc, { 0, 0, rc.right, 24 }, 0x1F1A18);
+    FillRectColor(hdc, { pad.left, 0, rc.right - pad.right, 1 }, 0x3C312C);
+    DrawBtn(hdc, { pad.left, 0, pad.left + 30, 24 }, L"\uE713", hoverElement == HOVER_SETTINGS, pressedElement == HOVER_SETTINGS);
+    DrawBtn(hdc, { pad.left + 30, 0, pad.left + 60, 24 }, L"\uE721", hoverElement == HOVER_SEARCH, pressedElement == HOVER_SEARCH);
+    if (searchVisible) FillRectColor(hdc, { pad.left + 30, 22, pad.left + 60, 24 }, 0xFF8B52);
+    SetBkMode(hdc, TRANSPARENT); SetTextColor(hdc, 0xBFB2AB); HFONT oldFont = (HFONT)SelectObject(hdc, hSmallFont);
+    int pos = Sci(SCI_GETCURRENTPOS), line = Sci(SCI_LINEFROMPOSITION, pos) + 1, col = Sci(SCI_GETCOLUMN, pos) + 1, eolMode = Sci(SCI_GETEOLMODE);
+    const wchar_t* eol = (eolMode == SC_EOL_CRLF) ? L"CRLF" : ((eolMode == SC_EOL_CR) ? L"CR" : L"LF");
+    const wchar_t* lang = L"Plain Text";
+    if (activeTabIndex < tabs.size()) {
+        std::wstring ext = tabs[activeTabIndex].filePath; size_t dot = ext.find_last_of(L'.');
+        if (dot != std::wstring::npos) {
+            std::wstring e = ext.substr(dot + 1);
+            if (!_wcsicmp(e.c_str(), L"cpp") || !_wcsicmp(e.c_str(), L"h") || !_wcsicmp(e.c_str(), L"hpp") || !_wcsicmp(e.c_str(), L"c")) lang = L"C++";
+            else if (!_wcsicmp(e.c_str(), L"py")) lang = L"Python";
+            else if (!_wcsicmp(e.c_str(), L"js") || !_wcsicmp(e.c_str(), L"ts")) lang = L"JavaScript";
+            else if (!_wcsicmp(e.c_str(), L"html") || !_wcsicmp(e.c_str(), L"htm") || !_wcsicmp(e.c_str(), L"xml")) lang = L"HTML";
+            else if (!_wcsicmp(e.c_str(), L"json")) lang = L"JSON";
+        }
+    }
+    wchar_t rInfo[256]; swprintf_s(rInfo, L"Ln %d, Col %d   |   UTF-8   |   %s   |   %s", line, col, eol, lang);
+    RECT rcRight = { rc.right / 2, 0, rc.right - pad.right - 10, 24 };
+    DrawTextW(hdc, rInfo, -1, &rcRight, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
+    SelectObject(hdc, oldFont);
+}
+
+void TriggerSettingsMenu(HWND h) {
+    std::vector<PopupMenuItem> items = {
+        { L"New Tab", IDM_FILE_NEW, false, false, L"Ctrl+N" },
+        { L"Open File...", IDM_FILE_OPEN, false, false, L"Ctrl+O" },
+        { L"Save File", IDM_FILE_SAVE, false, false, L"Ctrl+S" },
+        { L"Save File As...", IDM_FILE_SAVE_AS, false, false, L"" },
+        { L"Close Tab", IDM_FILE_CLOSE_TAB, false, false, L"Ctrl+W" },
+        { L"", 0, true, false, L"" },
+        { L"Word Wrap", IDM_TOGGLE_WRAP, false, Sci(SCI_GETWRAPMODE) != SC_WRAP_NONE, L"" },
+        { L"Line Numbers", IDM_TOGGLE_LINES, false, Sci(SCI_GETMARGINWIDTHN, 0) > 0, L"" },
+        { L"", 0, true, false, L"" },
+        { L"Settings...", IDM_SETTINGS_DIALOG, false, false, L"" },
+        { L"", 0, true, false, L"" },
+        { L"Exit", IDM_FILE_EXIT, false, false, L"" }
+    };
+    
+    RECT rc; GetClientRect(h, &rc); RECT pad = GetPad(h);
+    POINT pt = { pad.left, rc.bottom - 24 }; ClientToScreen(h, &pt);
+    
+    int selectedId = ShowCustomPopupMenu(h, pt.x, pt.y, items, true);
+    if (selectedId != 0) {
+        PostMessageW(h, WM_COMMAND, MAKEWPARAM(selectedId, 0), 0);
+    }
+}
+
+void TriggerSearchDialog(HWND h) {
+    searchVisible = !searchVisible;
+    if (searchVisible) {
+        RECT rc; GetClientRect(h, &rc); RECT pad = GetPad(h);
+        SetWindowPos(hwndSearchEdit, NULL, pad.left + 65, rc.bottom - pad.bottom - 21, 180, 18, SWP_NOZORDER | SWP_SHOWWINDOW);
+        SetFocus(hwndSearchEdit); SendMessage(hwndSearchEdit, EM_SETSEL, 0, -1);
+    } else { ShowWindow(hwndSearchEdit, SW_HIDE); SetFocus(hwndScintilla); }
+    UpdateUI(h);
+}
+
+void OnElementClicked(HWND h, HoverElement el) {
+    if (el == HOVER_CLOSE) PostMessage(h, WM_CLOSE, 0, 0);
+    else if (el == HOVER_MAXIMIZE) ShowWindow(h, IsZoomed(h) ? SW_RESTORE : SW_MAXIMIZE);
+    else if (el == HOVER_MINIMIZE) ShowWindow(h, SW_MINIMIZE);
+    else if (el == HOVER_UNDO) { if (Sci(SCI_CANUNDO)) Sci(SCI_UNDO); }
+    else if (el == HOVER_REDO) { if (Sci(SCI_CANREDO)) Sci(SCI_REDO); }
+    else if (el == HOVER_ADD_TAB) CreateNewTab(h);
+    else if (el >= HOVER_TAB_BASE && el < HOVER_TAB_CLOSE_BASE) SwitchToTab(h, el - HOVER_TAB_BASE);
+    else if (el >= HOVER_TAB_CLOSE_BASE && el < HOVER_SETTINGS) CloseTab(h, el - HOVER_TAB_CLOSE_BASE);
+    else if (el == HOVER_SEARCH) TriggerSearchDialog(h);
+    else if (el == HOVER_SETTINGS) TriggerSettingsMenu(h);
+}
