@@ -10,11 +10,6 @@
 obj/
 output/
 
-# Scintilla build artifacts
-scintilla/scintilla/bin/
-scintilla/scintilla/win32/*.obj
-scintilla/scintilla/win32/*.pdb
-scintilla/scintilla/win32/*.res
 
 # Generated icon (built from app.png)
 icon/app.ico

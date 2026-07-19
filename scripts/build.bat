@@ -13,24 +13,6 @@ if not exist "%VSPATH%\VC\Auxiliary\Build\vcvarsall.bat" (
 :: Initialize MSVC Environment for x64
 call "%VSPATH%\VC\Auxiliary\Build\vcvarsall.bat" x64
 
-echo.
-echo ========================================
-echo Building Scintilla...
-echo ========================================
-cd scintilla\scintilla\win32
-nmake -f scintilla.mak
-if %errorlevel% neq 0 (
-    echo Failed to build Scintilla.
-    pause
-    exit /b %errorlevel%
-)
-cd ..\..\..
-
-echo.
-echo ========================================
-echo Copying SciLexer.dll to output directory...
-echo ========================================
-copy /Y scintilla\scintilla\bin\Scintilla.dll .\
 
 echo.
 echo ========================================

@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 #include <fstream>
-#include "scintilla/scintilla/include/Scintilla.h"
+#include "include/Scintilla.h"
 
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "uxtheme.lib")
