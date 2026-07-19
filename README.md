@@ -12,7 +12,7 @@
 
 ## Key Features
 
-Most text editors are usually either too simple, or too bloated that you need to set everything up. This comes great out of the box.
+Most text editors are usually either too simple, or too bloated that you need to set everything up. This comes great out of the box with the philosophy of simple is better.
 
 - **Lightweight:** It opens the second you click it, and consumes very little memory.
 - **Clean Dark Aesthetic:** Every interface element is intentional.
