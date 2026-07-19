@@ -10,22 +10,15 @@
 
 ---
 
-## The Balance: Text Simplicity, Code Power
-
-Most editors force a choice between a basic notepad that lacks helper features, or a heavy IDE that takes seconds to load and hogs memory. Velo sits exactly in the middle. It has the startup speed and lightweight footprint of a simple text editor, combined with the core comforts needed to write code comfortably.
-
-- **Instant Startup:** No loading screens, splash windows, or telemetry. It opens instantly so you can start typing immediately.
-- **Clean Dark Aesthetic:** Every interface element—including the title bar, scrollbars, tabs, and dialogs—is custom-drawn in a unified dark theme to prevent bright system flashes.
-- **Typographic Clarity:** Loads high-quality fonts (JetBrains Mono for editing, Inter for UI) privately at runtime, ensuring clean readability without cluttering your system fonts.
-- **Fluid Coding Usability:** Features smart brace/quote auto-closing, bracket selection wrapping, character deletion helpers, and indent guides to keep your typing flow uninterrupted.
-- **State Persistence:** Remembers your open tabs, active document, and setting configurations automatically between launches, picking up exactly where you left off.
-
 ## Key Features
 
-- **Languages:** Highlighting for C, C++, Python, and HTML/XML.
-- **Custom Scrollbars:** Native custom-painted scrollbars designed to match the theme.
-- **Quick Search:** Inline non-obtrusive find bar (`Ctrl+F`).
-- **Real-time Settings:** Toggle block cursor, guide lines, whitespace rendering, and auto-braces instantly.
+Most text editors are usually either too simple, or too bloated that you need to set everything up. This comes great out of the box.
+
+- **Lightweight:** It opens the second you click it, and consumes very little memory.
+- **Clean Dark Aesthetic:** Every interface element is intentional.
+- **Typographic Clarity:** Uses different fonts for editing and the GUI.
+- **Fluid Coding Usability:** Features like smart brace/quote auto-closing, bracket selection wrapping, character deletion helpers
+- **State Persistence:** Remembers what you did the last time.
 
 ## Keyboard Shortcuts
 
