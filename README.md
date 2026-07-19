@@ -1,92 +1,66 @@
 <p align="center">
-  <img src="icon/app.png" width="128" alt="Velo Icon">
+  <img src="icon/app.png" width="128" alt="Velo">
 </p>
 
 <h1 align="center">Velo</h1>
 
 <p align="center">
-  A fast, lightweight code editor for Windows built with C++ and Scintilla.
+  A minimal, fast code editor that stays out of your way.
+</p>
+
+<p align="center">
+  <strong>~130 KB</strong> binary · <strong>Native C++</strong> · <strong>Zero frameworks</strong> · <strong>Instant startup</strong>
 </p>
 
 ---
 
-## Features
+## Why Velo
 
-- **Syntax Highlighting** — C/C++, Python, HTML/XML with full Lexilla integration
-- **Tabbed Editing** — Open multiple files with a clean tab bar
-- **Dark Theme** — Polished dark UI with custom-drawn title bar, scrollbars, and controls
-- **Session Persistence** — Remembers open tabs, active tab, and all settings between launches
-- **Auto-Close Braces** — Automatically pairs `()`, `{}`, `[]`, `""`, `''` with smart step-over and backspace deletion
-- **Selection Wrapping** — Select text and type a bracket/quote to wrap it
-- **Indentation Guides** — Visual block-indent markers
-- **Word Wrap & Line Numbers** — Togglable via keyboard shortcuts
-- **Find Bar** — Quick inline search with `Ctrl+F`
-- **Custom Scrollbars** — Styled dark scrollbars that match the theme
-- **Portable Fonts** — Ships with JetBrains Mono and Inter, loaded privately at runtime
+Most editors are either too bloated or too bare. Velo sits in the sweet spot — it gives you everything you need to write code comfortably, and nothing you don't.
 
-## Keyboard Shortcuts
+- **Opens instantly.** No splash screens, no loading bars, no telemetry. Double-click and you're typing.
+- **Truly lightweight.** The entire editor is a single ~130 KB executable. It uses less RAM than your browser's favicon cache.
+- **Built for dark mode.** Custom-drawn title bar, scrollbars, tabs, and dialogs — all designed from scratch to feel native and cohesive. No bright white flashes, ever.
+- **Comfortable to code in.** Syntax highlighting for C/C++, Python, and HTML. Auto-closing braces and quotes. Smart bracket wrapping. Indentation guides. All the small things that make typing code feel right.
+- **Remembers your workspace.** Close it with five files open, reopen it tomorrow — same tabs, same settings, right where you left off.
 
-| Shortcut | Action |
+## At a glance
+
+| | |
 |---|---|
-| `Ctrl+N` | New tab |
-| `Ctrl+O` | Open file |
-| `Ctrl+S` | Save |
-| `Ctrl+Shift+S` | Save As |
-| `Ctrl+W` | Close tab |
-| `Ctrl+Z` | Undo |
-| `Ctrl+Y` | Redo |
-| `Ctrl+F` | Find |
-| `Ctrl+Tab` | Next tab |
-| `Ctrl+Shift+Tab` | Previous tab |
+| **Languages** | C, C++, Python, HTML/XML |
+| **Fonts** | JetBrains Mono (editor), Inter (UI) — bundled, no install needed |
+| **Session** | Persists open tabs, active tab, and all settings automatically |
+| **Shortcuts** | `Ctrl+N` new · `Ctrl+O` open · `Ctrl+S` save · `Ctrl+W` close · `Ctrl+F` find · `Ctrl+Tab` switch tabs |
+| **Settings** | Auto-close braces · Indentation guides · Whitespace rendering · Block cursor |
 
 ## Building
 
-### Prerequisites
-
-- **Visual Studio 2022** (Community or higher) with C++ desktop development workload
-- **Inno Setup 6** (optional, for building the installer)
-
-### Compile
+Requires **Visual Studio 2022** with the C++ desktop workload.
 
 ```bat
 scripts\build.bat
 ```
 
-This will:
-1. Build Scintilla from source
-2. Compile the resource file (icon)
-3. Compile all C++ source files and link into `Velo.exe`
-
-### Create Installer
+To build the installer (requires [Inno Setup 6](https://jrsoftware.org/isdl.php)):
 
 ```bat
 scripts\create_setup.bat
 ```
 
-Builds the project, then compiles an installer using Inno Setup. The output (`VeloInstaller.exe`) is placed in the `output/` folder, which opens automatically when done.
-
-## Project Structure
+## Project structure
 
 ```
-├── src/                  # Application source code
-│   ├── main.cpp          # Entry point, window procedure, keybinds
-│   ├── globals.h         # Shared declarations and constants
-│   └── components/       # Modular UI components
-│       ├── editor.cpp    # Scintilla styling and syntax highlighting
-│       ├── tabmanager.cpp# Tab management and session persistence
-│       ├── dialogs.cpp   # Settings dialog and message boxes
-│       ├── ui_drawing.cpp# Custom title bar, tab bar, and scrollbar painting
-│       └── fonts.cpp     # Private font loading
-├── scintilla/            # Scintilla source (built during compile)
-├── fonts/                # JetBrains Mono and Inter font files
-├── icon/                 # Application icon (app.png)
-├── scripts/              # Build and installer scripts
-│   ├── build.bat
-│   ├── create_setup.bat
-│   └── installer.iss
-└── resource.rc           # Windows resource file (icon embedding)
+src/                → Application source
+  main.cpp          → Entry point, window proc, keybinds
+  globals.h         → Shared state and constants
+  components/       → Editor, tabs, dialogs, UI drawing, fonts
+scintilla/          → Scintilla editing component (built from source)
+fonts/              → Bundled JetBrains Mono and Inter
+icon/               → App icon
+scripts/            → Build and installer scripts
 ```
 
 ## License
 
-This project uses the [Scintilla](https://www.scintilla.org/) editing component, which is released under a permissive license. See `scintilla/scintilla/License.txt` for details.
+Uses the [Scintilla](https://www.scintilla.org/) editing component. See `scintilla/scintilla/License.txt`.
