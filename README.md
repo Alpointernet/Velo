@@ -8,10 +8,6 @@
   A minimal, fast text and code editor built for Windows.
 </p>
 
-<p align="center">
-  <strong>~130 KB binary</strong> · <strong>Instant startup</strong> · <strong>Native C++</strong> · <strong>Zero bloat</strong>
-</p>
-
 ---
 
 ## The Balance: Text Simplicity, Code Power
