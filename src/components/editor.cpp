@@ -108,7 +108,7 @@ void FindNextText(const std::string& query, bool forward) {
     Sci_TextToFind ft = { { forward ? cur : max(0, cur - (int)query.length()), forward ? len : 0 }, (char*)query.c_str() };
     int found = Sci(SCI_FINDTEXT, SCFIND_NONE, (LPARAM)&ft);
     if (found == -1) { ft.chrg = { forward ? 0 : len, cur }; found = Sci(SCI_FINDTEXT, SCFIND_NONE, (LPARAM)&ft); }
-    if (found != -1) { Sci(SCI_SETSEL, ft.chrgText.cpMin, ft.chrgText.cpMax); Sci(SCI_SCROLLCARET); }
+    if (found != -1) { Sci(SCI_SETSEL, ft.chrgText.cpMin, ft.chrgText.cpMax); Sci(SCI_VERTICALCENTRECARET); }
 }
 
 void ApplySyntax() {
@@ -152,6 +152,16 @@ void ApplySyntax() {
         Sci(SCI_STYLESETFONT, i, (LPARAM)"JetBrains Mono Medium"); Sci(SCI_STYLESETSIZE, i, editorFontSize);
     }
 
+    // Style the indentation guides using the unactive line/row number color (0x70635C)
+    Sci(SCI_STYLESETBACK, STYLE_INDENTGUIDE, 0x2B2521);
+    Sci(SCI_STYLESETFORE, STYLE_INDENTGUIDE, 0x70635C);
+
+    // Apply document-specific settings so they persist across tab switches/new documents
+    Sci(SCI_SETTABWIDTH, editorTabWidth);
+    Sci(SCI_SETINDENTATIONGUIDES, showIndentGuides ? SC_IV_LOOKBOTH : SC_IV_NONE);
+    Sci(SCI_SETVIEWWS, showWhitespace ? SCWS_VISIBLEALWAYS : SCWS_INVISIBLE);
+
+
     if (lex == SCLEX_CPP) {
         Sci(SCI_STYLESETFORE, 1, 0x55996A); Sci(SCI_STYLESETFORE, 2, 0x55996A);
         Sci(SCI_STYLESETFORE, 4, 0xA8CEB5); Sci(SCI_STYLESETFORE, 5, 0xD69C56); Sci(SCI_STYLESETBOLD, 5, FALSE);
@@ -186,6 +196,7 @@ void StyleScintilla(HWND hwndSci) {
     Sci(SCI_STYLESETFONT, 40, (LPARAM)"JetBrains Mono Medium"); Sci(SCI_STYLESETSIZE, 40, editorFontSize - 1); Sci(SCI_STYLESETBOLD, 40, TRUE);
     Sci(SCI_SETCARETFORE, 0xFF8B52); Sci(SCI_SETCARETWIDTH, 2);
     Sci(SCI_SETCARETLINEVISIBLE, TRUE); Sci(SCI_SETCARETLINEBACK, 0x3C312C);
+    Sci(SCI_SETCARETLINEVISIBLEALWAYS, TRUE);
     Sci(SCI_SETSELBACK, TRUE, 0x51443E); Sci(SCI_SETVSCROLLBAR, FALSE); Sci(SCI_SETHSCROLLBAR, FALSE);
     Sci(SCI_SETSCROLLWIDTHTRACKING, TRUE);
     Sci(SCI_SETINDENTATIONGUIDES, showIndentGuides ? SC_IV_LOOKBOTH : SC_IV_NONE);
@@ -214,4 +225,224 @@ void SyncLineNumbers(bool rebuild) {
     for (int i = max(0, s); i <= min(total - 1, e); ++i) Sci(SCI_MARGINSETSTYLE, i, 40);
     activeLineStart = s; activeLineEnd = e;
     UpdateLineNumberWidth();
+}
+
+void UpdateCurrentMatchIndex() {
+    if (searchMatches.empty()) {
+        currentMatchIndex = 0;
+        return;
+    }
+    int curPos = (int)Sci(SCI_GETCURRENTPOS);
+    int sPos = (int)Sci(SCI_GETSELECTIONSTART);
+    int ePos = (int)Sci(SCI_GETSELECTIONEND);
+    
+    // 1. Check if the current selection is exactly one of the matches
+    for (size_t i = 0; i < searchMatches.size(); ++i) {
+        if (searchMatches[i].first == sPos && searchMatches[i].second == ePos) {
+            currentMatchIndex = (int)i + 1;
+            return;
+        }
+    }
+    
+    // 2. Otherwise, find the first match after or at curPos
+    for (size_t i = 0; i < searchMatches.size(); ++i) {
+        if (searchMatches[i].first >= curPos) {
+            currentMatchIndex = (int)i + 1;
+            return;
+        }
+    }
+    
+    // 3. Fallback: wrap around to the first match
+    currentMatchIndex = 1;
+}
+
+void UpdateSearchMatches() {
+    searchMatches.clear();
+    currentMatchIndex = 0;
+    totalMatchesCount = 0;
+    
+    if (!hwndSearchEdit) return;
+    int len = GetWindowTextLengthW(hwndSearchEdit);
+    if (len == 0) {
+        UpdateUI(hwndMain);
+        return;
+    }
+    
+    std::wstring query(len + 1, 0);
+    GetWindowTextW(hwndSearchEdit, &query[0], len + 1);
+    query.resize(len);
+    
+    int u8len = WideCharToMultiByte(CP_UTF8, 0, query.c_str(), -1, NULL, 0, NULL, NULL);
+    std::string u8query(u8len, 0);
+    WideCharToMultiByte(CP_UTF8, 0, query.c_str(), -1, &u8query[0], u8len, NULL, NULL);
+    if (!u8query.empty() && u8query.back() == '\0') u8query.pop_back();
+    
+    if (u8query.empty()) {
+        UpdateUI(hwndMain);
+        return;
+    }
+    
+    int docLen = (int)Sci(SCI_GETLENGTH);
+    int pos = 0;
+    while (pos < docLen) {
+        Sci_TextToFind ft = { { pos, docLen }, (char*)u8query.c_str() };
+        int found = (int)Sci(SCI_FINDTEXT, SCFIND_NONE, (LPARAM)&ft);
+        if (found == -1) break;
+        searchMatches.push_back({ ft.chrgText.cpMin, ft.chrgText.cpMax });
+        pos = ft.chrgText.cpMax;
+        if (ft.chrgText.cpMin == ft.chrgText.cpMax) pos++;
+    }
+    
+    totalMatchesCount = (int)searchMatches.size();
+    UpdateCurrentMatchIndex();
+    UpdateUI(hwndMain);
+}
+
+void SearchNext() {
+    if (searchMatches.empty()) return;
+    int curPos = (int)Sci(SCI_GETCURRENTPOS);
+    int sPos = (int)Sci(SCI_GETSELECTIONSTART);
+    int ePos = (int)Sci(SCI_GETSELECTIONEND);
+    
+    int nextIdx = 0;
+    bool found = false;
+    for (size_t i = 0; i < searchMatches.size(); ++i) {
+        if (searchMatches[i].first == sPos && searchMatches[i].second == ePos) {
+            nextIdx = (int)i + 1;
+            found = true;
+            break;
+        }
+    }
+    
+    if (!found) {
+        for (size_t i = 0; i < searchMatches.size(); ++i) {
+            if (searchMatches[i].first >= curPos) {
+                nextIdx = (int)i;
+                found = true;
+                break;
+            }
+        }
+    }
+    
+    if (nextIdx >= (int)searchMatches.size()) nextIdx = 0;
+    
+    int start = searchMatches[nextIdx].first;
+    int end = searchMatches[nextIdx].second;
+    Sci(SCI_SETSEL, start, end);
+    Sci(SCI_VERTICALCENTRECARET);
+    
+    currentMatchIndex = nextIdx + 1;
+    UpdateUI(hwndMain);
+}
+
+void SearchPrev() {
+    if (searchMatches.empty()) return;
+    int curPos = (int)Sci(SCI_GETCURRENTPOS);
+    int sPos = (int)Sci(SCI_GETSELECTIONSTART);
+    int ePos = (int)Sci(SCI_GETSELECTIONEND);
+    
+    int prevIdx = -1;
+    bool found = false;
+    for (size_t i = 0; i < searchMatches.size(); ++i) {
+        if (searchMatches[i].first == sPos && searchMatches[i].second == ePos) {
+            prevIdx = (int)i - 1;
+            found = true;
+            break;
+        }
+    }
+    
+    if (!found) {
+        for (int i = (int)searchMatches.size() - 1; i >= 0; --i) {
+            if (searchMatches[i].second <= curPos) {
+                prevIdx = i;
+                found = true;
+                break;
+            }
+        }
+    }
+    
+    if (prevIdx < 0) prevIdx = (int)searchMatches.size() - 1;
+    
+    int start = searchMatches[prevIdx].first;
+    int end = searchMatches[prevIdx].second;
+    Sci(SCI_SETSEL, start, end);
+    Sci(SCI_VERTICALCENTRECARET);
+    
+    currentMatchIndex = prevIdx + 1;
+    UpdateUI(hwndMain);
+}
+
+void SearchSelectAll() {
+    if (searchMatches.empty()) return;
+    
+    Sci(SCI_SETMULTIPLESELECTION, TRUE);
+    Sci(SCI_SETADDITIONALSELECTIONTYPING, TRUE);
+    
+    int start0 = searchMatches[0].first;
+    int end0 = searchMatches[0].second;
+    Sci(SCI_SETSEL, start0, end0);
+    
+    for (size_t i = 1; i < searchMatches.size(); ++i) {
+        Sci(SCI_ADDSELECTION, searchMatches[i].first, searchMatches[i].second);
+    }
+    Sci(SCI_VERTICALCENTRECARET);
+    UpdateUI(hwndMain);
+}
+
+void SearchReplace() {
+    if (searchMatches.empty()) return;
+    
+    int sPos = (int)Sci(SCI_GETSELECTIONSTART);
+    int ePos = (int)Sci(SCI_GETSELECTIONEND);
+    
+    int matchIdx = -1;
+    for (size_t i = 0; i < searchMatches.size(); ++i) {
+        if (searchMatches[i].first == sPos && searchMatches[i].second == ePos) {
+            matchIdx = (int)i;
+            break;
+        }
+    }
+    
+    if (matchIdx == -1) {
+        SearchNext();
+        return;
+    }
+    
+    int len = GetWindowTextLengthW(hwndReplaceEdit);
+    std::wstring wrep(len + 1, 0);
+    GetWindowTextW(hwndReplaceEdit, &wrep[0], len + 1);
+    wrep.resize(len);
+    
+    int u8len = WideCharToMultiByte(CP_UTF8, 0, wrep.c_str(), -1, NULL, 0, NULL, NULL);
+    std::string u8rep(u8len, 0);
+    WideCharToMultiByte(CP_UTF8, 0, wrep.c_str(), -1, &u8rep[0], u8len, NULL, NULL);
+    if (!u8rep.empty() && u8rep.back() == '\0') u8rep.pop_back();
+    
+    Sci(SCI_REPLACESEL, 0, (LPARAM)u8rep.c_str());
+    
+    UpdateSearchMatches();
+    SearchNext();
+}
+
+void SearchReplaceAll() {
+    if (searchMatches.empty()) return;
+    
+    int len = GetWindowTextLengthW(hwndReplaceEdit);
+    std::wstring wrep(len + 1, 0);
+    GetWindowTextW(hwndReplaceEdit, &wrep[0], len + 1);
+    wrep.resize(len);
+    
+    int u8len = WideCharToMultiByte(CP_UTF8, 0, wrep.c_str(), -1, NULL, 0, NULL, NULL);
+    std::string u8rep(u8len, 0);
+    WideCharToMultiByte(CP_UTF8, 0, wrep.c_str(), -1, &u8rep[0], u8len, NULL, NULL);
+    if (!u8rep.empty() && u8rep.back() == '\0') u8rep.pop_back();
+    
+    Sci(SCI_BEGINUNDOACTION);
+    for (int i = (int)searchMatches.size() - 1; i >= 0; --i) {
+        Sci(SCI_SETSEL, searchMatches[i].first, searchMatches[i].second);
+        Sci(SCI_REPLACESEL, 0, (LPARAM)u8rep.c_str());
+    }
+    Sci(SCI_ENDUNDOACTION);
+    
+    UpdateSearchMatches();
 }

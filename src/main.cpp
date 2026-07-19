@@ -5,16 +5,20 @@
 #include "components/tabmanager.h"
 #include "components/ui_drawing.h"
 
+#pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+
 // Define Global Variables
 HWND hwndMain = NULL;
 HWND hwndScintilla = NULL;
 HWND hwndSearchEdit = NULL;
+HWND hwndReplaceEdit = NULL;
 HWND hwndVScroll = NULL;
 HWND hwndHScroll = NULL;
 HFONT hUIFont = NULL;
 HFONT hIconFont = NULL;
 HFONT hSmallFont = NULL;
 bool searchVisible = false;
+bool replaceVisible = false;
 bool scrollbarsVisible = true;
 bool vScrollHover = false;
 bool vScrollDrag = false;
@@ -31,7 +35,12 @@ size_t activeTabIndex = 0;
 HoverElement hoverElement = HOVER_NONE;
 HoverElement pressedElement = HOVER_NONE;
 WNDPROC oldSearchEditProc = NULL;
+WNDPROC oldReplaceEditProc = NULL;
 WNDPROC oldSciProc = NULL;
+
+int currentMatchIndex = 0;
+int totalMatchesCount = 0;
+std::vector<std::pair<int, int>> searchMatches;
 
 // Define Settings Globals
 int editorFontSize = 12;
@@ -45,19 +54,37 @@ bool caretStyleBlock = false;
 LRESULT CALLBACK SearchEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (msg == WM_KEYDOWN) {
         if (wParam == VK_RETURN) {
-            int len = GetWindowTextLengthW(hwnd);
-            if (len > 0) {
-                std::wstring wbuf(len + 1, 0); GetWindowTextW(hwnd, &wbuf[0], len + 1);
-                int u8len = WideCharToMultiByte(CP_UTF8, 0, wbuf.c_str(), -1, NULL, 0, NULL, NULL);
-                std::string u8buf(u8len, 0); WideCharToMultiByte(CP_UTF8, 0, wbuf.c_str(), -1, &u8buf[0], u8len, NULL, NULL);
-                FindNextText(u8buf.c_str(), (GetKeyState(VK_SHIFT) & 0x8000) == 0);
-            }
+            SearchNext();
             return 0;
         } else if (wParam == VK_ESCAPE) {
-            searchVisible = false; ShowWindow(hwnd, SW_HIDE); UpdateUI(hwndMain); return 0;
+            TriggerSearchDialog(hwndMain);
+            return 0;
+        } else if (wParam == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            SendMessage(hwnd, EM_SETSEL, 0, -1);
+            return 0;
         }
+    } else if (msg == WM_CHAR && (wParam == VK_RETURN || wParam == 1)) {
+        return 0; // Prevent system ding on Enter or Ctrl+A
     }
     return CallWindowProcW(oldSearchEditProc, hwnd, msg, wParam, lParam);
+}
+
+LRESULT CALLBACK ReplaceEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_KEYDOWN) {
+        if (wParam == VK_RETURN) {
+            SearchReplace();
+            return 0;
+        } else if (wParam == VK_ESCAPE) {
+            TriggerSearchDialog(hwndMain);
+            return 0;
+        } else if (wParam == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            SendMessage(hwnd, EM_SETSEL, 0, -1);
+            return 0;
+        }
+    } else if (msg == WM_CHAR && (wParam == VK_RETURN || wParam == 1)) {
+        return 0; // Prevent system ding on Enter or Ctrl+A
+    }
+    return CallWindowProcW(oldReplaceEditProc, hwnd, msg, wParam, lParam);
 }
 
 LRESULT CALLBACK ScrollbarProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -211,7 +238,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 Sci(SCI_SETTABWIDTH, editorTabWidth);
             }
             hwndSearchEdit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
-            if (hwndSearchEdit) { SendMessage(hwndSearchEdit, WM_SETFONT, (WPARAM)hUIFont, TRUE); oldSearchEditProc = (WNDPROC)SetWindowLongPtrW(hwndSearchEdit, GWLP_WNDPROC, (LONG_PTR)SearchEditProc); }
+            if (hwndSearchEdit) { SendMessageW(hwndSearchEdit, WM_SETFONT, (WPARAM)hUIFont, TRUE); SendMessageW(hwndSearchEdit, 0x1501, TRUE, (LPARAM)L"Search..."); oldSearchEditProc = (WNDPROC)SetWindowLongPtrW(hwndSearchEdit, GWLP_WNDPROC, (LONG_PTR)SearchEditProc); }
+            hwndReplaceEdit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
+            if (hwndReplaceEdit) { SendMessageW(hwndReplaceEdit, WM_SETFONT, (WPARAM)hUIFont, TRUE); SendMessageW(hwndReplaceEdit, 0x1501, TRUE, (LPARAM)L"Replace with..."); oldReplaceEditProc = (WNDPROC)SetWindowLongPtrW(hwndReplaceEdit, GWLP_WNDPROC, (LONG_PTR)ReplaceEditProc); }
 
             hwndVScroll = CreateWindowExW(0, L"DarkScrollbar", L"", WS_CHILD | WS_CLIPSIBLINGS, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
             hwndHScroll = CreateWindowExW(0, L"DarkScrollbar", L"", WS_CHILD | WS_CLIPSIBLINGS, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
@@ -239,6 +268,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         case WM_COMMAND: {
             int id = LOWORD(wParam);
+            int code = HIWORD(wParam);
+            if (code == EN_CHANGE && (HWND)lParam == hwndSearchEdit) {
+                UpdateSearchMatches();
+            }
             if (id == IDM_FILE_NEW) CreateNewTab(hwnd);
             else if (id == IDM_FILE_OPEN) DoFileOpen(hwnd);
             else if (id == IDM_FILE_SAVE) DoFileSave(hwnd);
@@ -263,7 +296,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             break;
         }
         case WM_CTLCOLOREDIT: {
-            if ((HWND)lParam == hwndSearchEdit) {
+            if ((HWND)lParam == hwndSearchEdit || (HWND)lParam == hwndReplaceEdit) {
                 SetTextColor((HDC)wParam, 0xBFB2AB); SetBkColor((HDC)wParam, 0x2B2521);
                 static HBRUSH hbrBg = CreateSolidBrush(0x2B2521); return (INT_PTR)hbrBg;
             }
@@ -297,7 +330,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             if (GetCapture() == hwnd) ReleaseCapture();
             POINT pt = { (int)(short)LOWORD(lParam), (short)HIWORD(lParam) }; HoverElement clicked = HitTest(hwnd, pt);
             if (clicked == pressedElement && pressedElement != HOVER_NONE) OnElementClicked(hwnd, pressedElement);
-            pressedElement = HOVER_NONE; UpdateUI(hwnd); break;
+            pressedElement = HOVER_NONE;
+            POINT pt2; GetCursorPos(&pt2); ScreenToClient(hwnd, &pt2);
+            hoverElement = HitTest(hwnd, pt2);
+            UpdateUI(hwnd); break;
         }
         case WM_MBUTTONUP: {
             POINT pt = { (int)(short)LOWORD(lParam), (short)HIWORD(lParam) };
@@ -315,12 +351,17 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             HDC memDC = CreateCompatibleDC(hdc); HBITMAP memBmp = CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
             HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, memBmp);
             PaintTopBar(hwnd, memDC, rc); PaintHeaderBar(hwnd, memDC, rc);
-            RECT rcTopGap = { pad.left, pad.top + 70, rc.right - pad.right, pad.top + 70 + EDITOR_TOP_MARGIN };
+            int offset = 0;
+            if (searchVisible) {
+                PaintSearchBar(hwnd, memDC, rc);
+                offset = replaceVisible ? 72 : 36;
+            }
+            RECT rcTopGap = { pad.left, pad.top + 70 + offset, rc.right - pad.right, pad.top + 70 + offset + EDITOR_TOP_MARGIN };
             FillRectColor(memDC, rcTopGap, 0x2B2521);
             POINT oldOrg; SetWindowOrgEx(memDC, 0, -(rc.bottom - pad.bottom - 24), &oldOrg);
             PaintStatusBar(hwnd, memDC, rc); SetWindowOrgEx(memDC, oldOrg.x, oldOrg.y, NULL);
-            if (pad.left > 1) FillRectColor(memDC, { 0, pad.top + 70, pad.left, rc.bottom - pad.bottom - 24 }, 0x2B2521);
-            if (pad.right > 1) FillRectColor(memDC, { rc.right - pad.right, pad.top + 70, rc.right, rc.bottom - pad.bottom - 24 }, 0x2B2521);
+            if (pad.left > 1) FillRectColor(memDC, { 0, pad.top + 70 + offset, pad.left, rc.bottom - pad.bottom - 24 }, 0x2B2521);
+            if (pad.right > 1) FillRectColor(memDC, { rc.right - pad.right, pad.top + 70 + offset, rc.right, rc.bottom - pad.bottom - 24 }, 0x2B2521);
             if (pad.bottom > 1) FillRectColor(memDC, { 0, rc.bottom - pad.bottom, rc.right, rc.bottom }, 0x1F1A18);
             
             FillRectColor(memDC, { 0, 0, rc.right, 1 }, 0x3C312C);
@@ -336,9 +377,28 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_SIZE: {
             if (hwndScintilla) {
                 RECT rc; GetClientRect(hwnd, &rc); RECT pad = GetPad(hwnd);
-                int ew = rc.right - pad.left - pad.right, eh = rc.bottom - (pad.top + 70 + EDITOR_TOP_MARGIN + 24 + pad.bottom);
-                SetWindowPos(hwndScintilla, NULL, pad.left, pad.top + 70 + EDITOR_TOP_MARGIN, ew, eh, SWP_NOZORDER);
-                if (hwndSearchEdit && searchVisible) SetWindowPos(hwndSearchEdit, NULL, pad.left + 65, rc.bottom - pad.bottom - 21, 180, 18, SWP_NOZORDER);
+                int offset = 0;
+                if (searchVisible) {
+                    offset = replaceVisible ? 72 : 36;
+                }
+                int topH = pad.top + 70 + offset + EDITOR_TOP_MARGIN;
+                int ew = rc.right - pad.left - pad.right;
+                int eh = rc.bottom - topH - 24 - pad.bottom;
+                SetWindowPos(hwndScintilla, NULL, pad.left, topH, ew, eh, SWP_NOZORDER);
+
+                if (searchVisible) {
+                    int searchY = pad.top + 70 + 10;
+                    SetWindowPos(hwndSearchEdit, NULL, pad.left + 15, searchY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
+                    if (replaceVisible) {
+                        int replaceY = pad.top + 70 + 36 + 10;
+                        SetWindowPos(hwndReplaceEdit, NULL, pad.left + 15, replaceY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
+                    } else {
+                        ShowWindow(hwndReplaceEdit, SW_HIDE);
+                    }
+                } else {
+                    ShowWindow(hwndSearchEdit, SW_HIDE);
+                    ShowWindow(hwndReplaceEdit, SW_HIDE);
+                }
                 SyncScrollbars();
                 RedrawWindow(hwnd, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
             }
@@ -348,6 +408,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             if (lParam && ((SCNotification*)lParam)->nmhdr.hwndFrom == hwndScintilla) {
                 SCNotification* n = (SCNotification*)lParam;
                 if (n->nmhdr.code == SCN_MODIFIED) {
+                    if (n->modificationType & (0x01 | 0x02)) { // SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT
+                        RecalculateScrollWidth();
+                        if (searchVisible) UpdateSearchMatches();
+                    }
                     if (activeTabIndex < tabs.size() && tabs[activeTabIndex].isModified != (Sci(SCI_GETMODIFY) != 0)) {
                         tabs[activeTabIndex].isModified = (Sci(SCI_GETMODIFY) != 0); UpdateUI(hwnd);
                     }
@@ -387,6 +451,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                         Sci(SCI_ENDUNDOACTION);
                     }
                 } else if (n->nmhdr.code == SCN_UPDATEUI) {
+                    if (searchVisible) UpdateCurrentMatchIndex();
                     UpdateUI(hwnd); SyncLineNumbers(); ShowScrollbars(hwnd);
                 }
             }

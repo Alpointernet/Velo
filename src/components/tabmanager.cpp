@@ -49,6 +49,7 @@ void SwitchToTab(HWND h, size_t idx) {
     activeTabIndex = idx; Sci(SCI_SETDOCPOINTER, 0, tabs[activeTabIndex].docPointer);
     activeLineStart = -1; activeLineEnd = -1; ApplySyntax(); SyncLineNumbers(true);
     RecalculateScrollWidth();
+    if (searchVisible) UpdateSearchMatches();
     UpdateUI(h);
     SetFocus(hwndScintilla);
     SaveSession();
@@ -107,6 +108,7 @@ void LoadFileInActiveTab(HWND h, const wchar_t* path) {
             tabs[activeTabIndex] = { path, GetFileName(path), tabs[activeTabIndex].docPointer, false };
             activeLineStart = -1; activeLineEnd = -1; ApplySyntax(); SyncLineNumbers(true);
             RecalculateScrollWidth();
+            if (searchVisible) UpdateSearchMatches();
             UpdateUI(h);
             SaveSession();
         }

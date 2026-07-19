@@ -55,7 +55,9 @@ struct Tab {
 
 enum HoverElement {
     HOVER_NONE, HOVER_MINIMIZE, HOVER_MAXIMIZE, HOVER_CLOSE, HOVER_UNDO, HOVER_REDO, HOVER_ADD_TAB,
-    HOVER_TAB_BASE, HOVER_TAB_CLOSE_BASE = 100, HOVER_SETTINGS = 200, HOVER_SEARCH
+    HOVER_TAB_BASE, HOVER_TAB_CLOSE_BASE = 100, HOVER_SETTINGS = 200, HOVER_SEARCH,
+    HOVER_SEARCH_PREV, HOVER_SEARCH_NEXT, HOVER_SEARCH_SELECT_ALL, HOVER_SEARCH_REPLACE_TOGGLE,
+    HOVER_SEARCH_CLOSE, HOVER_REPLACE_NEXT, HOVER_REPLACE_ALL
 };
 
 struct DlgButton {
@@ -84,17 +86,31 @@ struct PopupMenuItem {
 };
 
 // Global Variables
-extern HWND hwndMain, hwndScintilla, hwndSearchEdit;
+extern HWND hwndMain, hwndScintilla, hwndSearchEdit, hwndReplaceEdit;
 extern HWND hwndVScroll, hwndHScroll;
 extern HFONT hUIFont, hIconFont, hSmallFont;
-extern bool searchVisible, scrollbarsVisible, vScrollHover, vScrollDrag, hScrollHover, hScrollDrag;
+extern bool searchVisible, replaceVisible, scrollbarsVisible, vScrollHover, vScrollDrag, hScrollHover, hScrollDrag;
 extern int scrollDragStart, scrollDragStartPos, scrollDragMaxScroll, scrollDragMaxTravel;
 extern int activeLineStart, activeLineEnd;
 extern std::vector<Tab> tabs;
 extern size_t activeTabIndex;
 extern HoverElement hoverElement, pressedElement;
-extern WNDPROC oldSearchEditProc;
+extern WNDPROC oldSearchEditProc, oldReplaceEditProc;
 extern WNDPROC oldSciProc;
+
+extern int currentMatchIndex;
+extern int totalMatchesCount;
+extern std::vector<std::pair<int, int>> searchMatches;
+
+#ifndef SCI_SETMULTIPLESELECTION
+#define SCI_SETMULTIPLESELECTION 2563
+#endif
+#ifndef SCI_SETADDITIONALSELECTIONTYPING
+#define SCI_SETADDITIONALSELECTIONTYPING 2565
+#endif
+#ifndef SCI_ADDSELECTION
+#define SCI_ADDSELECTION 2573
+#endif
 
 // Settings Globals
 extern int editorFontSize;

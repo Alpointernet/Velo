@@ -6,7 +6,8 @@
 void PaintTopBar(HWND h, HDC hdc, const RECT& rc);
 void PaintHeaderBar(HWND h, HDC hdc, const RECT& rc);
 void PaintStatusBar(HWND h, HDC hdc, const RECT& rc);
-void DrawBtn(HDC hdc, RECT rc, const wchar_t* text, bool hover, bool press, bool isClose = false, HFONT font = hIconFont, bool disabled = false);
+void PaintSearchBar(HWND h, HDC hdc, const RECT& rc);
+void DrawBtn(HDC hdc, RECT rc, const wchar_t* text, bool hover, bool press, bool isClose = false, HFONT font = hIconFont, bool disabled = false, bool toggled = false, bool elevated = true);
 void UpdateUI(HWND h);
 void SyncScrollbars();
 void ShowScrollbars(HWND h);

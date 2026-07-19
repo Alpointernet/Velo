@@ -18,7 +18,8 @@ RECT GetPad(HWND h) {
 
 void UpdateUI(HWND h) {
     RECT rc; GetClientRect(h, &rc); RECT pad = GetPad(h);
-    RECT rcTop = { 0, 0, rc.right, pad.top + 70 + EDITOR_TOP_MARGIN }, rcStatus = { 0, rc.bottom - 24, rc.right, rc.bottom };
+    int offset = searchVisible ? (replaceVisible ? 72 : 36) : 0;
+    RECT rcTop = { 0, 0, rc.right, pad.top + 70 + EDITOR_TOP_MARGIN + offset }, rcStatus = { 0, rc.bottom - 24, rc.right, rc.bottom };
     InvalidateRect(h, &rcTop, FALSE); InvalidateRect(h, &rcStatus, FALSE);
     std::wstring title = (tabs[activeTabIndex].filePath.empty() ? L"Untitled" : tabs[activeTabIndex].filePath) + L" - Velo";
     SetWindowTextW(h, title.c_str());
@@ -26,10 +27,11 @@ void UpdateUI(HWND h) {
 
 void SyncScrollbars() {
     if (!hwndScintilla || !hwndVScroll || !hwndHScroll) return;
-    RecalculateScrollWidth();
     RECT rcSci; GetClientRect(hwndScintilla, &rcSci);
     RECT pad = GetPad(hwndMain);
-    int sciX = pad.left, sciY = pad.top + 70 + EDITOR_TOP_MARGIN;
+    int offset = 0;
+    if (searchVisible) offset = replaceVisible ? 72 : 36;
+    int sciX = pad.left, sciY = pad.top + 70 + offset + EDITOR_TOP_MARGIN;
 
     int marginW = GetTotalMarginWidth(); 
     int vLineH = Sci(SCI_TEXTHEIGHT);
@@ -118,15 +120,33 @@ HoverElement HitTest(HWND h, POINT pt) {
         if (pt.x >= pad.left && pt.x < pad.left + 30) return HOVER_SETTINGS;
         if (pt.x >= pad.left + 30 && pt.x < pad.left + 60) return HOVER_SEARCH;
     }
+    if (searchVisible && pt.y >= pad.top + 70 && pt.y < pad.top + 70 + (replaceVisible ? 72 : 36)) {
+        int relY = pt.y - (pad.top + 70);
+        if (relY < 36) {
+            if (pt.x >= rc.right - pad.right - 278 && pt.x < rc.right - pad.right - 254 && pt.y >= pad.top + 70 + 6 && pt.y < pad.top + 70 + 30) return HOVER_SEARCH_PREV;
+            if (pt.x >= rc.right - pad.right - 249 && pt.x < rc.right - pad.right - 225 && pt.y >= pad.top + 70 + 6 && pt.y < pad.top + 70 + 30) return HOVER_SEARCH_NEXT;
+            if (pt.x >= rc.right - pad.right - 215 && pt.x < rc.right - pad.right - 135 && pt.y >= pad.top + 70 + 6 && pt.y < pad.top + 70 + 30) return HOVER_SEARCH_SELECT_ALL;
+            if (pt.x >= rc.right - pad.right - 125 && pt.x < rc.right - pad.right - 45 && pt.y >= pad.top + 70 + 6 && pt.y < pad.top + 70 + 30) return HOVER_SEARCH_REPLACE_TOGGLE;
+            if (pt.x >= rc.right - pad.right - 35 && pt.x < rc.right - pad.right - 11 && pt.y >= pad.top + 70 + 6 && pt.y < pad.top + 70 + 30) return HOVER_SEARCH_CLOSE;
+        } else {
+            if (pt.x >= pad.left + 355 && pt.x < pad.left + 435 && pt.y >= pad.top + 70 + 36 + 6 && pt.y < pad.top + 70 + 36 + 30) return HOVER_REPLACE_NEXT;
+            if (pt.x >= pad.left + 445 && pt.x < pad.left + 535 && pt.y >= pad.top + 70 + 36 + 6 && pt.y < pad.top + 70 + 36 + 30) return HOVER_REPLACE_ALL;
+        }
+    }
     return HOVER_NONE;
 }
 
-void DrawBtn(HDC hdc, RECT rc, const wchar_t* text, bool hover, bool press, bool isClose, HFONT font, bool disabled) {
-    COLORREF textCol = disabled ? 0x443630 : 0xBFB2AB, bgCol = 0; bool hasBg = false;
+void DrawBtn(HDC hdc, RECT rc, const wchar_t* text, bool hover, bool press, bool isClose, HFONT font, bool disabled, bool toggled, bool elevated) {
+    COLORREF textCol = disabled ? 0x443630 : 0xBFB2AB;
+    COLORREF bgCol = elevated ? 0x322A26 : 0;
+    bool hasBg = elevated;
     if (!disabled) {
         if (isClose && hover) { bgCol = press ? 0xF1707A : 0xE81123; textCol = 0xFFFFFF; hasBg = true; }
-        else if (press) { bgCol = 0x51443E; hasBg = true; }
+        else if (toggled) { bgCol = hover ? 0x51443E : 0x3C312C; textCol = 0xFF8B52; hasBg = true; }
+        else if (press) { bgCol = 0x51443E; if (!isClose) textCol = 0xFFFFFF; hasBg = true; }
         else if (hover) { bgCol = 0x3C312C; if (!isClose) textCol = 0xFFFFFF; hasBg = true; }
+    } else {
+        hasBg = false;
     }
     if (hasBg) FillRectColor(hdc, rc, bgCol);
     HFONT oldFont = (HFONT)SelectObject(hdc, font); int oldBk = SetBkMode(hdc, TRANSPARENT); SetTextColor(hdc, textCol);
@@ -179,7 +199,7 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
         if (tabs[i].isModified && !cHover) {
             FillRectColor(hdc, { curX + tabW - 16, pad.top + 14, curX + tabW - 10, pad.top + 20 }, 0xBFB2AB);
         } else {
-            DrawBtn(hdc, rcClose, L"\uE711", cHover, cPress);
+            DrawBtn(hdc, rcClose, L"\uE711", cHover, cPress, true, hIconFont, false, false, false);
         }
         curX += tabW;
     }
@@ -207,12 +227,12 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
     }
     
     int addTabX = overflow ? tabLimit : (startX + totalW);
-    DrawBtn(hdc, { addTabX, pad.top, addTabX + 30, pad.top + 35 }, L"\uE710", hoverElement == HOVER_ADD_TAB, pressedElement == HOVER_ADD_TAB);
+    DrawBtn(hdc, { addTabX, pad.top, addTabX + 30, pad.top + 35 }, L"\uE710", hoverElement == HOVER_ADD_TAB, pressedElement == HOVER_ADD_TAB, false, hIconFont, false, false, false);
     
     int btnX = rc.right - pad.right - 135;
-    DrawBtn(hdc, { btnX, pad.top, btnX + 45, pad.top + 35 }, L"\uE921", hoverElement == HOVER_MINIMIZE, pressedElement == HOVER_MINIMIZE);
-    DrawBtn(hdc, { btnX + 45, pad.top, btnX + 90, pad.top + 35 }, IsZoomed(h) ? L"\uE923" : L"\uE922", hoverElement == HOVER_MAXIMIZE, pressedElement == HOVER_MAXIMIZE);
-    DrawBtn(hdc, { btnX + 90, pad.top, btnX + 135, pad.top + 35 }, L"\uE8BB", hoverElement == HOVER_CLOSE, pressedElement == HOVER_CLOSE, true);
+    DrawBtn(hdc, { btnX, pad.top, btnX + 45, pad.top + 35 }, L"\uE921", hoverElement == HOVER_MINIMIZE, pressedElement == HOVER_MINIMIZE, false, hIconFont, false, false, false);
+    DrawBtn(hdc, { btnX + 45, pad.top, btnX + 90, pad.top + 35 }, IsZoomed(h) ? L"\uE923" : L"\uE922", hoverElement == HOVER_MAXIMIZE, pressedElement == HOVER_MAXIMIZE, false, hIconFont, false, false, false);
+    DrawBtn(hdc, { btnX + 90, pad.top, btnX + 135, pad.top + 35 }, L"\uE8BB", hoverElement == HOVER_CLOSE, pressedElement == HOVER_CLOSE, true, hIconFont, false, false, false);
     SelectObject(hdc, oldFont);
 }
 
@@ -288,13 +308,101 @@ void TriggerSettingsMenu(HWND h) {
     }
 }
 
+void PaintSearchBar(HWND h, HDC hdc, const RECT& rc) {
+    RECT pad = GetPad(h);
+    int topY = pad.top + 70;
+    int height = replaceVisible ? 72 : 36;
+    
+    // Background
+    FillRectColor(hdc, { 0, topY, rc.right, topY + height }, 0x2B2521);
+    
+    // Bottom border
+    FillRectColor(hdc, { pad.left, topY + height - 1, rc.right - pad.right, topY + height }, 0x3C312C);
+    
+    // Draw Border around Edit Box
+    RECT rcSearchBorder = { pad.left + 14, topY + 7, pad.left + 14 + 332, topY + 7 + 22 };
+    HBRUSH hBr = CreateSolidBrush(0x3C312C);
+    FrameRect(hdc, &rcSearchBorder, hBr);
+    DeleteObject(hBr);
+    
+    // Match counter text (e.g. 25/46)
+    wchar_t cBuf[32];
+    if (totalMatchesCount > 0) {
+        swprintf_s(cBuf, L"%d/%d", currentMatchIndex, totalMatchesCount);
+    } else {
+        int len = GetWindowTextLengthW(hwndSearchEdit);
+        if (len > 0) {
+            swprintf_s(cBuf, L"0/0");
+        } else {
+            cBuf[0] = L'\0';
+        }
+    }
+    
+    if (cBuf[0] != L'\0') {
+        SetTextColor(hdc, 0x858585); // Muted gray
+        SetBkMode(hdc, TRANSPARENT);
+        HFONT oldFont = (HFONT)SelectObject(hdc, hSmallFont);
+        RECT rcCounter = { pad.left + 355, topY, pad.left + 420, topY + 36 };
+        DrawTextW(hdc, cBuf, -1, &rcCounter, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+        SelectObject(hdc, oldFont);
+    }
+    
+    // Prev Arrow (Segoe MDL2 Left Arrow / Chevron Left)
+    RECT rcPrev = { rc.right - pad.right - 278, topY + 6, rc.right - pad.right - 254, topY + 30 };
+    DrawBtn(hdc, rcPrev, L"\uE00E", hoverElement == HOVER_SEARCH_PREV, pressedElement == HOVER_SEARCH_PREV);
+    
+    // Next Arrow (Segoe MDL2 Right Arrow / Chevron Right)
+    RECT rcNext = { rc.right - pad.right - 249, topY + 6, rc.right - pad.right - 225, topY + 30 };
+    DrawBtn(hdc, rcNext, L"\uE00F", hoverElement == HOVER_SEARCH_NEXT, pressedElement == HOVER_SEARCH_NEXT);
+    
+    // Select All
+    RECT rcSelectAll = { rc.right - pad.right - 215, topY + 6, rc.right - pad.right - 135, topY + 30 };
+    DrawBtn(hdc, rcSelectAll, L"Select All", hoverElement == HOVER_SEARCH_SELECT_ALL, pressedElement == HOVER_SEARCH_SELECT_ALL, false, hUIFont);
+    
+    // Replace Toggle
+    RECT rcReplaceToggle = { rc.right - pad.right - 125, topY + 6, rc.right - pad.right - 45, topY + 30 };
+    DrawBtn(hdc, rcReplaceToggle, L"Replace...", hoverElement == HOVER_SEARCH_REPLACE_TOGGLE, pressedElement == HOVER_SEARCH_REPLACE_TOGGLE, false, hUIFont, false, replaceVisible);
+    
+    // Close button
+    RECT rcClose = { rc.right - pad.right - 35, topY + 6, rc.right - pad.right - 11, topY + 30 };
+    DrawBtn(hdc, rcClose, L"\uE711", hoverElement == HOVER_SEARCH_CLOSE, pressedElement == HOVER_SEARCH_CLOSE, true, hIconFont, false, false, false);
+    
+    // Row 2 (Replace)
+    if (replaceVisible) {
+        // Draw Border around Replace Edit Box
+        RECT rcReplaceBorder = { pad.left + 14, topY + 36 + 7, pad.left + 14 + 332, topY + 36 + 7 + 22 };
+        HBRUSH hBrRep = CreateSolidBrush(0x3C312C);
+        FrameRect(hdc, &rcReplaceBorder, hBrRep);
+        DeleteObject(hBrRep);
+        
+        // Replace Next Button
+        RECT rcRepNext = { pad.left + 355, topY + 36 + 6, pad.left + 435, topY + 36 + 30 };
+        DrawBtn(hdc, rcRepNext, L"Replace", hoverElement == HOVER_REPLACE_NEXT, pressedElement == HOVER_REPLACE_NEXT, false, hUIFont);
+        
+        // Replace All Button
+        RECT rcRepAll = { pad.left + 445, topY + 36 + 6, pad.left + 535, topY + 36 + 30 };
+        DrawBtn(hdc, rcRepAll, L"Replace All", hoverElement == HOVER_REPLACE_ALL, pressedElement == HOVER_REPLACE_ALL, false, hUIFont);
+    }
+}
+
 void TriggerSearchDialog(HWND h) {
     searchVisible = !searchVisible;
     if (searchVisible) {
-        RECT rc; GetClientRect(h, &rc); RECT pad = GetPad(h);
-        SetWindowPos(hwndSearchEdit, NULL, pad.left + 65, rc.bottom - pad.bottom - 21, 180, 18, SWP_NOZORDER | SWP_SHOWWINDOW);
-        SetFocus(hwndSearchEdit); SendMessage(hwndSearchEdit, EM_SETSEL, 0, -1);
-    } else { ShowWindow(hwndSearchEdit, SW_HIDE); SetFocus(hwndScintilla); }
+        ShowWindow(hwndSearchEdit, SW_SHOW);
+        if (replaceVisible) {
+            ShowWindow(hwndReplaceEdit, SW_SHOW);
+        }
+        SetFocus(hwndSearchEdit);
+        SendMessage(hwndSearchEdit, EM_SETSEL, 0, -1);
+        UpdateSearchMatches();
+    } else {
+        replaceVisible = false;
+        ShowWindow(hwndSearchEdit, SW_HIDE);
+        ShowWindow(hwndReplaceEdit, SW_HIDE);
+        SetFocus(hwndScintilla);
+    }
+    RECT rc; GetClientRect(h, &rc);
+    SendMessage(h, WM_SIZE, 0, MAKELPARAM(rc.right, rc.bottom));
     UpdateUI(h);
 }
 
@@ -309,4 +417,30 @@ void OnElementClicked(HWND h, HoverElement el) {
     else if (el >= HOVER_TAB_CLOSE_BASE && el < HOVER_SETTINGS) CloseTab(h, el - HOVER_TAB_CLOSE_BASE);
     else if (el == HOVER_SEARCH) TriggerSearchDialog(h);
     else if (el == HOVER_SETTINGS) TriggerSettingsMenu(h);
+    else if (el == HOVER_SEARCH_PREV) SearchPrev();
+    else if (el == HOVER_SEARCH_NEXT) SearchNext();
+    else if (el == HOVER_SEARCH_SELECT_ALL) SearchSelectAll();
+    else if (el == HOVER_SEARCH_REPLACE_TOGGLE) {
+        replaceVisible = !replaceVisible;
+        RECT rc; GetClientRect(h, &rc);
+        SendMessage(h, WM_SIZE, 0, MAKELPARAM(rc.right, rc.bottom));
+        if (replaceVisible && hwndReplaceEdit) {
+            SetFocus(hwndReplaceEdit);
+        } else {
+            SetFocus(hwndSearchEdit);
+        }
+        UpdateUI(h);
+    }
+    else if (el == HOVER_SEARCH_CLOSE) {
+        searchVisible = false;
+        replaceVisible = false;
+        ShowWindow(hwndSearchEdit, SW_HIDE);
+        ShowWindow(hwndReplaceEdit, SW_HIDE);
+        SetFocus(hwndScintilla);
+        RECT rc; GetClientRect(h, &rc);
+        SendMessage(h, WM_SIZE, 0, MAKELPARAM(rc.right, rc.bottom));
+        UpdateUI(h);
+    }
+    else if (el == HOVER_REPLACE_NEXT) SearchReplace();
+    else if (el == HOVER_REPLACE_ALL) SearchReplaceAll();
 }
