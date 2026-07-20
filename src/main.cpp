@@ -459,8 +459,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             break;
         }
-        case WM_DESTROY: {
+        case WM_CLOSE: {
             SaveSession();
+            DestroyWindow(hwnd);
+            return 0;
+        }
+        case WM_DESTROY: {
             if (hUIFont) DeleteObject(hUIFont);
             if (hIconFont) DeleteObject(hIconFont);
             if (hSmallFont) DeleteObject(hSmallFont);
