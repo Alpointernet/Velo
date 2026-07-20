@@ -37,6 +37,9 @@ HoverElement pressedElement = HOVER_NONE;
 WNDPROC oldSearchEditProc = NULL;
 WNDPROC oldReplaceEditProc = NULL;
 WNDPROC oldSciProc = NULL;
+WNDPROC oldTabRenameEditProc = NULL;
+HWND hwndTabRenameEdit = NULL;
+int tabRenameIndex = -1;
 
 int currentMatchIndex = 0;
 int totalMatchesCount = 0;
@@ -86,6 +89,51 @@ LRESULT CALLBACK ReplaceEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
         return 0; // Prevent system ding on Enter or Ctrl+A
     }
     return CallWindowProcW(oldReplaceEditProc, hwnd, msg, wParam, lParam);
+}
+
+LRESULT CALLBACK TabRenameEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_KEYDOWN) {
+        if (wParam == VK_RETURN) {
+            if (tabRenameIndex >= 0 && tabRenameIndex < tabs.size()) {
+                int len = GetWindowTextLengthW(hwnd);
+                if (len > 0) {
+                    std::vector<wchar_t> buf(len + 1);
+                    GetWindowTextW(hwnd, buf.data(), len + 1);
+                    std::wstring newName(buf.data());
+                    
+                    std::wstring oldPath = tabs[tabRenameIndex].filePath;
+                    if (!oldPath.empty()) {
+                        std::wstring parentDir = oldPath.substr(0, oldPath.find_last_of(L"\\/") + 1);
+                        std::wstring newPath = parentDir + newName;
+                        if (MoveFileW(oldPath.c_str(), newPath.c_str())) {
+                            tabs[tabRenameIndex].filePath = newPath;
+                            tabs[tabRenameIndex].title = newName;
+                        } else {
+                            ShowCustomMessageBox(hwndMain, L"Failed to rename file on disk.", L"Error", MB_OK);
+                        }
+                    } else {
+                        tabs[tabRenameIndex].title = newName;
+                    }
+                    UpdateUI(hwndMain);
+                }
+            }
+            ShowWindow(hwnd, SW_HIDE);
+            SetFocus(hwndScintilla);
+            return 0;
+        } else if (wParam == VK_ESCAPE) {
+            ShowWindow(hwnd, SW_HIDE);
+            SetFocus(hwndScintilla);
+            return 0;
+        } else if (wParam == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            SendMessage(hwnd, EM_SETSEL, 0, -1);
+            return 0;
+        }
+    } else if (msg == WM_CHAR && (wParam == VK_RETURN || wParam == 1)) {
+        return 0; // Prevent system ding
+    } else if (msg == WM_KILLFOCUS) {
+        ShowWindow(hwnd, SW_HIDE);
+    }
+    return CallWindowProcW(oldTabRenameEditProc, hwnd, msg, wParam, lParam);
 }
 
 LRESULT CALLBACK ScrollbarProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -160,8 +208,7 @@ LRESULT CALLBACK SciSubProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     (prev == '[' && next == ']') ||
                     (prev == '"' && next == '"') ||
                     (prev == '\'' && next == '\'')) {
-                    Sci(SCI_DELETERANGE, pos - 1, 2);
-                    return 0;
+                    Sci(SCI_DELETERANGE, pos, 1);
                 }
             }
         }
@@ -225,7 +272,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_CREATE: {
             hwndMain = hwnd; ApplyDarkMode(hwnd);
             hUIFont = CreateFontW(15, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, L"Inter Medium");
-            hIconFont = CreateFontW(11, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, L"Segoe MDL2 Assets");
+            hIconFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, L"Segoe MDL2 Assets");
             hSmallFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, L"Inter Light");
             HMODULE hSci = LoadLibraryW(L"SciLexer.dll"); if (!hSci) hSci = LoadLibraryW(L"Scintilla.dll");
             if (!hSci) { ShowCustomMessageBox(hwnd, L"Failed to load Scintilla library", L"Error", MB_OK); return -1; }
@@ -242,6 +289,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             if (hwndSearchEdit) { SendMessageW(hwndSearchEdit, WM_SETFONT, (WPARAM)hUIFont, TRUE); SendMessageW(hwndSearchEdit, 0x1501, TRUE, (LPARAM)L"Search..."); oldSearchEditProc = (WNDPROC)SetWindowLongPtrW(hwndSearchEdit, GWLP_WNDPROC, (LONG_PTR)SearchEditProc); }
             hwndReplaceEdit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
             if (hwndReplaceEdit) { SendMessageW(hwndReplaceEdit, WM_SETFONT, (WPARAM)hUIFont, TRUE); SendMessageW(hwndReplaceEdit, 0x1501, TRUE, (LPARAM)L"Replace with..."); oldReplaceEditProc = (WNDPROC)SetWindowLongPtrW(hwndReplaceEdit, GWLP_WNDPROC, (LONG_PTR)ReplaceEditProc); }
+            
+            hwndTabRenameEdit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_BORDER | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
+            if (hwndTabRenameEdit) { SendMessageW(hwndTabRenameEdit, WM_SETFONT, (WPARAM)hUIFont, TRUE); oldTabRenameEditProc = (WNDPROC)SetWindowLongPtrW(hwndTabRenameEdit, GWLP_WNDPROC, (LONG_PTR)TabRenameEditProc); }
 
             hwndVScroll = CreateWindowExW(0, L"DarkScrollbar", L"", WS_CHILD | WS_CLIPSIBLINGS, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
             hwndHScroll = CreateWindowExW(0, L"DarkScrollbar", L"", WS_CHILD | WS_CLIPSIBLINGS, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
@@ -326,6 +376,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_LBUTTONDOWN: {
             POINT pt = { (int)(short)LOWORD(lParam), (short)HIWORD(lParam) }; pressedElement = HitTest(hwnd, pt);
             UpdateUI(hwnd); SetCapture(hwnd); break;
+        }
+        case WM_LBUTTONDBLCLK: {
+            POINT pt = { (int)(short)LOWORD(lParam), (short)HIWORD(lParam) };
+            HoverElement clicked = HitTest(hwnd, pt);
+            if (clicked >= HOVER_TAB_BASE && clicked < HOVER_TAB_CLOSE_BASE) {
+                TriggerTabRename(hwnd, clicked - HOVER_TAB_BASE);
+            }
+            break;
         }
         case WM_LBUTTONUP: {
             if (GetCapture() == hwnd) ReleaseCapture();
@@ -477,7 +535,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nCmd) {
     LoadFonts();
-    WNDCLASSW wc = { CS_HREDRAW | CS_VREDRAW, WndProc, 0, 0, hInst, LoadIconW(hInst, MAKEINTRESOURCEW(1)), LoadCursorW(NULL, (LPCWSTR)IDC_ARROW), NULL, NULL, L"VeloClass" };
+    WNDCLASSW wc = { CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW, WndProc, 0, 0, hInst, LoadIconW(hInst, MAKEINTRESOURCEW(1)), LoadCursorW(NULL, (LPCWSTR)IDC_ARROW), NULL, NULL, L"VeloClass" };
     RegisterClassW(&wc);
     WNDCLASSW wcSb = { 0, ScrollbarProc, 0, 0, hInst, NULL, LoadCursorW(NULL, (LPCWSTR)IDC_ARROW), NULL, NULL, L"DarkScrollbar" };
     RegisterClassW(&wcSb);

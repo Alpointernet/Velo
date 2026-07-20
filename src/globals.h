@@ -90,7 +90,7 @@ struct PopupMenuItem {
 };
 
 // Global Variables
-extern HWND hwndMain, hwndScintilla, hwndSearchEdit, hwndReplaceEdit;
+extern HWND hwndMain, hwndScintilla, hwndSearchEdit, hwndReplaceEdit, hwndTabRenameEdit;
 extern HWND hwndVScroll, hwndHScroll;
 extern HFONT hUIFont, hIconFont, hSmallFont;
 extern bool searchVisible, replaceVisible, scrollbarsVisible, vScrollHover, vScrollDrag, hScrollHover, hScrollDrag;

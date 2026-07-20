@@ -16,5 +16,6 @@ void TriggerSettingsMenu(HWND h);
 void TriggerSearchDialog(HWND h);
 HoverElement HitTest(HWND h, POINT pt);
 void OnElementClicked(HWND h, HoverElement el);
+void TriggerTabRename(HWND h, int index);
 
 #endif // UI_DRAWING_H

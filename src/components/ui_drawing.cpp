@@ -559,3 +559,33 @@ void OnElementClicked(HWND h, HoverElement el) {
     else if (el == HOVER_REPLACE_NEXT) SearchReplace();
     else if (el == HOVER_REPLACE_ALL) SearchReplaceAll();
 }
+
+extern int tabRenameIndex;
+void TriggerTabRename(HWND h, int index) {
+    if (index < 0 || index >= tabs.size()) return;
+    RECT rc; GetClientRect(h, &rc); RECT pad = GetPad(h);
+    int totalW = 0;
+    for (size_t i = 0; i < tabs.size(); ++i) totalW += GetTabWidth(i);
+    int startX = pad.left + 70;
+    int maxTabRight = rc.right - pad.right - 135;
+    bool overflow = (startX + totalW > maxTabRight);
+    int tabLimit = overflow ? (maxTabRight - 30) : maxTabRight;
+    
+    int curX = startX;
+    for (size_t i = 0; i < tabs.size(); ++i) {
+        int tabW = GetTabWidth(i);
+        if (curX >= tabLimit) break;
+        if (i == index) {
+            tabRenameIndex = index;
+            int renderW = min(tabW, tabLimit - curX);
+            if (renderW > 25 && hwndTabRenameEdit) {
+                SetWindowTextW(hwndTabRenameEdit, tabs[i].title.c_str());
+                SetWindowPos(hwndTabRenameEdit, HWND_TOP, curX + 10, pad.top + 8, renderW - 35, 20, SWP_SHOWWINDOW);
+                SetFocus(hwndTabRenameEdit);
+                SendMessage(hwndTabRenameEdit, EM_SETSEL, 0, -1);
+            }
+            return;
+        }
+        curX += tabW;
+    }
+}
