@@ -8,7 +8,6 @@
 static std::wstring GetBackupsDir();
 static std::string GetDocText(sptr_t docPointer);
 static void CleanOldBackups(size_t startIdx);
-
 std::wstring GetFileName(const std::wstring& path) {
     size_t pos = path.find_last_of(L"\\/");
     return pos == std::wstring::npos ? path : path.substr(pos + 1);
@@ -74,8 +73,13 @@ void SwitchToTab(HWND h, size_t idx) {
                     if (ReadFile(hFile, buf.data(), size, &read, NULL)) {
                         Sci(SCI_CLEARALL);
                         Sci(SCI_APPENDTEXT, read, (LPARAM)buf.data());
-                        if (!modified) Sci(SCI_SETSAVEPOINT);
                         Sci(SCI_EMPTYUNDOBUFFER);
+                        if (modified) {
+                            Sci(SCI_INSERTTEXT, 0, (LPARAM)" ");
+                            Sci(SCI_DELETERANGE, 0, 1);
+                        } else {
+                            Sci(SCI_SETSAVEPOINT);
+                        }
                         loaded = true;
                     }
                     CloseHandle(hFile);
@@ -91,8 +95,13 @@ void SwitchToTab(HWND h, size_t idx) {
                 if (ReadFile(hFile, buf.data(), size, &read, NULL)) {
                     Sci(SCI_CLEARALL);
                     Sci(SCI_APPENDTEXT, read, (LPARAM)buf.data());
-                    if (!modified) Sci(SCI_SETSAVEPOINT);
                     Sci(SCI_EMPTYUNDOBUFFER);
+                    if (modified) {
+                        Sci(SCI_INSERTTEXT, 0, (LPARAM)" ");
+                        Sci(SCI_DELETERANGE, 0, 1);
+                    } else {
+                        Sci(SCI_SETSAVEPOINT);
+                    }
                     loaded = true;
                 }
                 CloseHandle(hFile);
