@@ -4,6 +4,8 @@
 #include "tabmanager.h"
 #include "dialogs.h"
 
+extern int tabRenameIndex;
+extern HWND hwndTabRenameEdit;
 void FillRectColor(HDC hdc, const RECT& rc, COLORREF color) {
     SetBkColor(hdc, color);
     ExtTextOutW(hdc, 0, 0, ETO_OPAQUE, &rc, NULL, 0, NULL);
@@ -198,7 +200,8 @@ void DrawBtn(HDC hdc, RECT rc, const wchar_t* text, bool hover, bool press, bool
     }
     if (hasBg) FillRectColor(hdc, rc, bgCol);
     HFONT oldFont = font ? (HFONT)SelectObject(hdc, font) : NULL; int oldBk = SetBkMode(hdc, TRANSPARENT); SetTextColor(hdc, textCol);
-    DrawTextW(hdc, text, -1, &rc, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+    RECT textRc = rc; textRc.top += 1; textRc.bottom += 1;
+    DrawTextW(hdc, text, -1, &textRc, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
     SetBkMode(hdc, oldBk); if (oldFont) SelectObject(hdc, oldFont);
 }
 
@@ -241,6 +244,13 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
         RECT rcText = { curX + 10, pad.top, curX + tabW - 25, pad.top + 35 };
         SetTextColor(hdc, active ? 0xFFFFFF : 0xBFB2AB); SetBkMode(hdc, TRANSPARENT);
         DrawTextW(hdc, tabs[i].title.c_str(), -1, &rcText, DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
+        
+        if (hwndTabRenameEdit && IsWindowVisible(hwndTabRenameEdit) && tabRenameIndex == i) {
+            RECT rcBorder = { curX + 9, pad.top + 7, curX + tabW - 24, pad.top + 29 };
+            HBRUSH hBrBorder = CreateSolidBrush(0x51443E);
+            FrameRect(hdc, &rcBorder, hBrBorder);
+            DeleteObject(hBrBorder);
+        }
         
         RECT rcClose = { curX + tabW - 22, pad.top + 8, curX + tabW - 6, pad.top + 28 };
         bool cHover = (hoverElement == HOVER_TAB_CLOSE_BASE + i), cPress = (pressedElement == HOVER_TAB_CLOSE_BASE + i);
@@ -333,7 +343,7 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     
     // Language
     SetTextColor(hdc, 0xBFB2AB);
-    RECT rcLang = { 0, 2, rightLimit, 26 };
+    RECT rcLang = { 0, 1, rightLimit, 25 };
     DrawTextW(hdc, lang, -1, &rcLang, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     
     RECT rcLangMeasure = { 0 }; DrawTextW(hdc, lang, -1, &rcLangMeasure, DT_CALCRECT | DT_SINGLELINE);
@@ -342,7 +352,7 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     
     // Divider
     SetTextColor(hdc, 0x51443E);
-    RECT rcDiv1 = { 0, 2, rightLimit, 26 };
+    RECT rcDiv1 = { 0, 1, rightLimit, 25 };
     DrawTextW(hdc, L"   |   ", -1, &rcDiv1, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     
     RECT rcDivMeasure = { 0 }; DrawTextW(hdc, L"   |   ", -1, &rcDivMeasure, DT_CALCRECT | DT_SINGLELINE);
@@ -352,7 +362,7 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     // EOL Format (Highlights on hover!)
     bool isEolHovered = (hoverElement == HOVER_STATUS_EOL);
     SetTextColor(hdc, isEolHovered ? 0xFF8B52 : 0xBFB2AB);
-    RECT rcEol = { 0, 2, rightLimit, 26 };
+    RECT rcEol = { 0, 1, rightLimit, 25 };
     DrawTextW(hdc, eol, -1, &rcEol, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     
     RECT rcEolMeasure = { 0 }; DrawTextW(hdc, eol, -1, &rcEolMeasure, DT_CALCRECT | DT_SINGLELINE);
@@ -361,13 +371,13 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     
     // Divider
     SetTextColor(hdc, 0x51443E);
-    RECT rcDiv2 = { 0, 2, rightLimit, 26 };
+    RECT rcDiv2 = { 0, 1, rightLimit, 25 };
     DrawTextW(hdc, L"   |   ", -1, &rcDiv2, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     rightLimit -= wDiv;
     
     // Encoding
     SetTextColor(hdc, 0xBFB2AB);
-    RECT rcEnc = { 0, 2, rightLimit, 26 };
+    RECT rcEnc = { 0, 1, rightLimit, 25 };
     DrawTextW(hdc, L"UTF-8", -1, &rcEnc, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     
     RECT rcEncMeasure = { 0 }; DrawTextW(hdc, L"UTF-8", -1, &rcEncMeasure, DT_CALCRECT | DT_SINGLELINE);
@@ -376,14 +386,14 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     
     // Divider
     SetTextColor(hdc, 0x51443E);
-    RECT rcDiv3 = { 0, 2, rightLimit, 26 };
+    RECT rcDiv3 = { 0, 1, rightLimit, 25 };
     DrawTextW(hdc, L"   |   ", -1, &rcDiv3, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     rightLimit -= wDiv;
     
     // Position Info
     SetTextColor(hdc, 0xBFB2AB);
     wchar_t posInfo[128]; swprintf_s(posInfo, L"Ln %d, Col %d", line, col);
-    RECT rcPos = { 0, 2, rightLimit, 26 };
+    RECT rcPos = { 0, 1, rightLimit, 25 };
     DrawTextW(hdc, posInfo, -1, &rcPos, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     
     SelectObject(hdc, oldFont);
@@ -560,7 +570,6 @@ void OnElementClicked(HWND h, HoverElement el) {
     else if (el == HOVER_REPLACE_ALL) SearchReplaceAll();
 }
 
-extern int tabRenameIndex;
 void TriggerTabRename(HWND h, int index) {
     if (index < 0 || index >= tabs.size()) return;
     RECT rc; GetClientRect(h, &rc); RECT pad = GetPad(h);
