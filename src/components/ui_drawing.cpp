@@ -19,10 +19,14 @@ RECT GetPad(HWND h) {
 void UpdateUI(HWND h) {
     RECT rc; GetClientRect(h, &rc); RECT pad = GetPad(h);
     int offset = searchVisible ? (replaceVisible ? 72 : 36) : 0;
-    RECT rcTop = { 0, 0, rc.right, pad.top + 70 + EDITOR_TOP_MARGIN + offset }, rcStatus = { 0, rc.bottom - 24, rc.right, rc.bottom };
+    RECT rcTop = { 0, 0, rc.right, pad.top + 70 + EDITOR_TOP_MARGIN + offset }, rcStatus = { 0, rc.bottom - pad.bottom - 24, rc.right, rc.bottom };
     InvalidateRect(h, &rcTop, FALSE); InvalidateRect(h, &rcStatus, FALSE);
-    std::wstring title = (tabs[activeTabIndex].filePath.empty() ? L"Untitled" : tabs[activeTabIndex].filePath) + L" - Velo";
-    SetWindowTextW(h, title.c_str());
+    std::wstring title = (tabs[activeTabIndex].filePath.empty() ? L"Untitled" : tabs[activeTabIndex].filePath) + (tabs[activeTabIndex].isModified ? L"*" : L"") + L" - Velo";
+    static std::wstring lastTitle = L"";
+    if (title != lastTitle) {
+        lastTitle = title;
+        SetWindowTextW(h, title.c_str());
+    }
 }
 
 void SyncScrollbars() {
