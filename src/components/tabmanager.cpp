@@ -450,8 +450,8 @@ void LoadSession(HWND hwndParent) {
             std::wstring path = tabPaths[i];
             std::wstring title = tabTitles[i];
             sptr_t doc = Sci(SCI_CREATEDOCUMENT);
-            bool modified = tabModifieds[i];
             std::wstring backup = tabBackups[i];
+            bool modified = tabModifieds[i] || !backup.empty();
             tabs.push_back({ path, title, doc, modified, backup, false });
         }
         
