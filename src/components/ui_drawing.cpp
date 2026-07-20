@@ -84,6 +84,39 @@ void ApplyDarkMode(HWND hwnd) {
     }
 }
 
+RECT GetEolRect(HWND h, HDC hdc, const RECT& rc) {
+    RECT pad = GetPad(h);
+    int pos = hwndScintilla ? Sci(SCI_GETCURRENTPOS) : 0;
+    int line = hwndScintilla ? Sci(SCI_LINEFROMPOSITION, pos) + 1 : 1;
+    int col = hwndScintilla ? Sci(SCI_GETCOLUMN, pos) + 1 : 1;
+    int eolMode = hwndScintilla ? Sci(SCI_GETEOLMODE) : 0;
+    const wchar_t* eol = (eolMode == SC_EOL_CRLF) ? L"CRLF" : ((eolMode == SC_EOL_CR) ? L"CR" : L"LF");
+    const wchar_t* lang = L"Plain Text";
+    if (activeTabIndex < tabs.size()) {
+        std::wstring ext = tabs[activeTabIndex].filePath; size_t dot = ext.find_last_of(L'.');
+        if (dot != std::wstring::npos) {
+            std::wstring e = ext.substr(dot + 1);
+            if (!_wcsicmp(e.c_str(), L"cpp") || !_wcsicmp(e.c_str(), L"h") || !_wcsicmp(e.c_str(), L"hpp") || !_wcsicmp(e.c_str(), L"c")) lang = L"C++";
+            else if (!_wcsicmp(e.c_str(), L"py")) lang = L"Python";
+            else if (!_wcsicmp(e.c_str(), L"js") || !_wcsicmp(e.c_str(), L"ts")) lang = L"JavaScript";
+            else if (!_wcsicmp(e.c_str(), L"html") || !_wcsicmp(e.c_str(), L"htm") || !_wcsicmp(e.c_str(), L"xml")) lang = L"HTML";
+            else if (!_wcsicmp(e.c_str(), L"json")) lang = L"JSON";
+        }
+    }
+    HFONT oldFont = hSmallFont ? (HFONT)SelectObject(hdc, hSmallFont) : NULL;
+    RECT rcLangMeasure = { 0 }; DrawTextW(hdc, lang, -1, &rcLangMeasure, DT_CALCRECT | DT_SINGLELINE);
+    int wLang = rcLangMeasure.right - rcLangMeasure.left;
+    RECT rcDivMeasure = { 0 }; DrawTextW(hdc, L"   |   ", -1, &rcDivMeasure, DT_CALCRECT | DT_SINGLELINE);
+    int wDiv = rcDivMeasure.right - rcDivMeasure.left;
+    RECT rcEolMeasure = { 0 }; DrawTextW(hdc, eol, -1, &rcEolMeasure, DT_CALCRECT | DT_SINGLELINE);
+    int wEol = rcEolMeasure.right - rcEolMeasure.left;
+    if (oldFont) SelectObject(hdc, oldFont);
+    int rightLimit = rc.right - pad.right - 10;
+    int eolRight = rightLimit - wLang - wDiv;
+    int eolLeft = eolRight - wEol;
+    return { eolLeft, 0, eolRight, 24 };
+}
+
 HoverElement HitTest(HWND h, POINT pt) {
     RECT rc; GetClientRect(h, &rc); RECT pad = GetPad(h);
     if (pt.y >= pad.top && pt.y < pad.top + 35) {
@@ -119,6 +152,17 @@ HoverElement HitTest(HWND h, POINT pt) {
     if (pt.y >= rc.bottom - 24 && pt.y < rc.bottom) {
         if (pt.x >= pad.left && pt.x < pad.left + 30) return HOVER_SETTINGS;
         if (pt.x >= pad.left + 30 && pt.x < pad.left + 60) return HOVER_SEARCH;
+        
+        if (hwndScintilla) {
+            HDC hdc = GetDC(h);
+            RECT rcEol = GetEolRect(h, hdc, rc);
+            ReleaseDC(h, hdc);
+            
+            int sbTop = rc.bottom - pad.bottom - 24;
+            if (pt.x >= rcEol.left && pt.x < rcEol.right && pt.y >= sbTop && pt.y < sbTop + 24) {
+                return HOVER_STATUS_EOL;
+            }
+        }
     }
     if (searchVisible && pt.y >= pad.top + 70 && pt.y < pad.top + 70 + (replaceVisible ? 72 : 36)) {
         int relY = pt.y - (pad.top + 70);
@@ -149,9 +193,9 @@ void DrawBtn(HDC hdc, RECT rc, const wchar_t* text, bool hover, bool press, bool
         hasBg = false;
     }
     if (hasBg) FillRectColor(hdc, rc, bgCol);
-    HFONT oldFont = (HFONT)SelectObject(hdc, font); int oldBk = SetBkMode(hdc, TRANSPARENT); SetTextColor(hdc, textCol);
+    HFONT oldFont = font ? (HFONT)SelectObject(hdc, font) : NULL; int oldBk = SetBkMode(hdc, TRANSPARENT); SetTextColor(hdc, textCol);
     DrawTextW(hdc, text, -1, &rc, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
-    SetBkMode(hdc, oldBk); SelectObject(hdc, oldFont);
+    SetBkMode(hdc, oldBk); if (oldFont) SelectObject(hdc, oldFont);
 }
 
 void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
@@ -177,7 +221,7 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
     HRGN hRgn = CreateRectRgn(startX, pad.top, tabLimit, pad.top + 36);
     SelectClipRgn(hdc, hRgn);
     
-    int curX = startX; HFONT oldFont = (HFONT)SelectObject(hdc, hUIFont);
+    int curX = startX; HFONT oldFont = hUIFont ? (HFONT)SelectObject(hdc, hUIFont) : NULL;
     int activeTabLeft = 0, activeTabRight = 0;
     for (size_t i = 0; i < tabs.size(); ++i) {
         int tabW = GetTabWidth(i);
@@ -233,7 +277,7 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
     DrawBtn(hdc, { btnX, pad.top, btnX + 45, pad.top + 35 }, L"\uE921", hoverElement == HOVER_MINIMIZE, pressedElement == HOVER_MINIMIZE, false, hIconFont, false, false, false);
     DrawBtn(hdc, { btnX + 45, pad.top, btnX + 90, pad.top + 35 }, IsZoomed(h) ? L"\uE923" : L"\uE922", hoverElement == HOVER_MAXIMIZE, pressedElement == HOVER_MAXIMIZE, false, hIconFont, false, false, false);
     DrawBtn(hdc, { btnX + 90, pad.top, btnX + 135, pad.top + 35 }, L"\uE8BB", hoverElement == HOVER_CLOSE, pressedElement == HOVER_CLOSE, true, hIconFont, false, false, false);
-    SelectObject(hdc, oldFont);
+    if (oldFont) SelectObject(hdc, oldFont);
 }
 
 void PaintHeaderBar(HWND h, HDC hdc, const RECT& rc) {
@@ -243,7 +287,7 @@ void PaintHeaderBar(HWND h, HDC hdc, const RECT& rc) {
     std::wstring pathStr = (activeTabIndex < tabs.size()) ? tabs[activeTabIndex].filePath : L"", fileName = pathStr.empty() ? L"Untitled" : GetFileName(pathStr), parentDir = L"";
     size_t lastSlash = pathStr.find_last_of(L"\\/");
     if (lastSlash != std::wstring::npos) parentDir = pathStr.substr(0, lastSlash + 1);
-    SetBkMode(hdc, TRANSPARENT); HFONT oldFont = (HFONT)SelectObject(hdc, hUIFont);
+    SetBkMode(hdc, TRANSPARENT); HFONT oldFont = hUIFont ? (HFONT)SelectObject(hdc, hUIFont) : NULL;
     RECT rcMeasure = { 0 }; DrawTextW(hdc, fileName.c_str(), -1, &rcMeasure, DT_CALCRECT | DT_SINGLELINE);
     int fileW = rcMeasure.right - rcMeasure.left;
     RECT rcFile = { pad.left + 15, pad.top + 35, pad.left + 15 + fileW, pad.top + 70 };
@@ -252,7 +296,7 @@ void PaintHeaderBar(HWND h, HDC hdc, const RECT& rc) {
         RECT rcParent = { pad.left + 15 + fileW + 10, pad.top + 35, rc.right - pad.right - 320, pad.top + 70 };
         SetTextColor(hdc, 0x858585); DrawTextW(hdc, parentDir.c_str(), -1, &rcParent, DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
     }
-    SelectObject(hdc, oldFont);
+    if (oldFont) SelectObject(hdc, oldFont);
 }
 
 void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
@@ -262,8 +306,11 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     DrawBtn(hdc, { pad.left, 0, pad.left + 30, 24 }, L"\uE713", hoverElement == HOVER_SETTINGS, pressedElement == HOVER_SETTINGS, false, hIconFont, false, false, false);
     DrawBtn(hdc, { pad.left + 30, 0, pad.left + 60, 24 }, L"\uE721", hoverElement == HOVER_SEARCH, pressedElement == HOVER_SEARCH, false, hIconFont, false, false, false);
     if (searchVisible) FillRectColor(hdc, { pad.left + 30, 22, pad.left + 60, 24 }, 0xFF8B52);
-    SetBkMode(hdc, TRANSPARENT); SetTextColor(hdc, 0xBFB2AB); HFONT oldFont = (HFONT)SelectObject(hdc, hSmallFont);
-    int pos = Sci(SCI_GETCURRENTPOS), line = Sci(SCI_LINEFROMPOSITION, pos) + 1, col = Sci(SCI_GETCOLUMN, pos) + 1, eolMode = Sci(SCI_GETEOLMODE);
+    int rightLimit = rc.right - pad.right - 10;
+    int pos = hwndScintilla ? Sci(SCI_GETCURRENTPOS) : 0;
+    int line = hwndScintilla ? Sci(SCI_LINEFROMPOSITION, pos) + 1 : 1;
+    int col = hwndScintilla ? Sci(SCI_GETCOLUMN, pos) + 1 : 1;
+    int eolMode = hwndScintilla ? Sci(SCI_GETEOLMODE) : 0;
     const wchar_t* eol = (eolMode == SC_EOL_CRLF) ? L"CRLF" : ((eolMode == SC_EOL_CR) ? L"CR" : L"LF");
     const wchar_t* lang = L"Plain Text";
     if (activeTabIndex < tabs.size()) {
@@ -277,9 +324,64 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
             else if (!_wcsicmp(e.c_str(), L"json")) lang = L"JSON";
         }
     }
-    wchar_t rInfo[256]; swprintf_s(rInfo, L"Ln %d, Col %d   |   UTF-8   |   %s   |   %s", line, col, eol, lang);
-    RECT rcRight = { rc.right / 2, 0, rc.right - pad.right - 10, 24 };
-    DrawTextW(hdc, rInfo, -1, &rcRight, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
+    HFONT oldFont = hSmallFont ? (HFONT)SelectObject(hdc, hSmallFont) : NULL;
+    SetBkMode(hdc, TRANSPARENT);
+    
+    // Language
+    SetTextColor(hdc, 0xBFB2AB);
+    RECT rcLang = { 0, 0, rightLimit, 24 };
+    DrawTextW(hdc, lang, -1, &rcLang, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
+    
+    RECT rcLangMeasure = { 0 }; DrawTextW(hdc, lang, -1, &rcLangMeasure, DT_CALCRECT | DT_SINGLELINE);
+    int wLang = rcLangMeasure.right - rcLangMeasure.left;
+    rightLimit -= wLang;
+    
+    // Divider
+    SetTextColor(hdc, 0x51443E);
+    RECT rcDiv1 = { 0, 0, rightLimit, 24 };
+    DrawTextW(hdc, L"   |   ", -1, &rcDiv1, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
+    
+    RECT rcDivMeasure = { 0 }; DrawTextW(hdc, L"   |   ", -1, &rcDivMeasure, DT_CALCRECT | DT_SINGLELINE);
+    int wDiv = rcDivMeasure.right - rcDivMeasure.left;
+    rightLimit -= wDiv;
+    
+    // EOL Format (Highlights on hover!)
+    bool isEolHovered = (hoverElement == HOVER_STATUS_EOL);
+    SetTextColor(hdc, isEolHovered ? 0xFF8B52 : 0xBFB2AB);
+    RECT rcEol = { 0, 0, rightLimit, 24 };
+    DrawTextW(hdc, eol, -1, &rcEol, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
+    
+    RECT rcEolMeasure = { 0 }; DrawTextW(hdc, eol, -1, &rcEolMeasure, DT_CALCRECT | DT_SINGLELINE);
+    int wEol = rcEolMeasure.right - rcEolMeasure.left;
+    rightLimit -= wEol;
+    
+    // Divider
+    SetTextColor(hdc, 0x51443E);
+    RECT rcDiv2 = { 0, 0, rightLimit, 24 };
+    DrawTextW(hdc, L"   |   ", -1, &rcDiv2, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
+    rightLimit -= wDiv;
+    
+    // Encoding
+    SetTextColor(hdc, 0xBFB2AB);
+    RECT rcEnc = { 0, 0, rightLimit, 24 };
+    DrawTextW(hdc, L"UTF-8", -1, &rcEnc, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
+    
+    RECT rcEncMeasure = { 0 }; DrawTextW(hdc, L"UTF-8", -1, &rcEncMeasure, DT_CALCRECT | DT_SINGLELINE);
+    int wEnc = rcEncMeasure.right - rcEncMeasure.left;
+    rightLimit -= wEnc;
+    
+    // Divider
+    SetTextColor(hdc, 0x51443E);
+    RECT rcDiv3 = { 0, 0, rightLimit, 24 };
+    DrawTextW(hdc, L"   |   ", -1, &rcDiv3, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
+    rightLimit -= wDiv;
+    
+    // Position Info
+    SetTextColor(hdc, 0xBFB2AB);
+    wchar_t posInfo[128]; swprintf_s(posInfo, L"Ln %d, Col %d", line, col);
+    RECT rcPos = { 0, 0, rightLimit, 24 };
+    DrawTextW(hdc, posInfo, -1, &rcPos, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
+    
     SelectObject(hdc, oldFont);
 }
 
@@ -417,6 +519,14 @@ void OnElementClicked(HWND h, HoverElement el) {
     else if (el >= HOVER_TAB_CLOSE_BASE && el < HOVER_SETTINGS) CloseTab(h, el - HOVER_TAB_CLOSE_BASE);
     else if (el == HOVER_SEARCH) TriggerSearchDialog(h);
     else if (el == HOVER_SETTINGS) TriggerSettingsMenu(h);
+    else if (el == HOVER_STATUS_EOL) {
+        int eolMode = Sci(SCI_GETEOLMODE);
+        int newMode = (eolMode == SC_EOL_CRLF) ? SC_EOL_LF : SC_EOL_CRLF;
+        Sci(SCI_SETEOLMODE, newMode);
+        Sci(SCI_CONVERTEOLS, newMode);
+        SaveSession();
+        UpdateUI(h);
+    }
     else if (el == HOVER_SEARCH_PREV) SearchPrev();
     else if (el == HOVER_SEARCH_NEXT) SearchNext();
     else if (el == HOVER_SEARCH_SELECT_ALL) SearchSelectAll();

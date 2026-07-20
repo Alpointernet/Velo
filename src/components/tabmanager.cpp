@@ -5,6 +5,10 @@
 #include "dialogs.h"
 #include <shlobj.h>
 
+static std::wstring GetBackupsDir();
+static std::string GetDocText(sptr_t docPointer);
+static void CleanOldBackups(size_t startIdx);
+
 std::wstring GetFileName(const std::wstring& path) {
     size_t pos = path.find_last_of(L"\\/");
     return pos == std::wstring::npos ? path : path.substr(pos + 1);
@@ -43,10 +47,61 @@ int GetTabWidth(size_t index) {
 
 void SwitchToTab(HWND h, size_t idx) {
     if (idx >= tabs.size()) return;
-    if (autoSaveOnSwitch && activeTabIndex < tabs.size() && Sci(SCI_GETMODIFY)) {
-        DoFileSave(h);
+    
+    // Save current active tab modified state
+    if (activeTabIndex < tabs.size()) {
+        tabs[activeTabIndex].isModified = (Sci(SCI_GETMODIFY) != 0);
     }
-    activeTabIndex = idx; Sci(SCI_SETDOCPOINTER, 0, tabs[activeTabIndex].docPointer);
+    
+    activeTabIndex = idx; 
+    Sci(SCI_SETDOCPOINTER, 0, tabs[activeTabIndex].docPointer);
+    
+    // Lazy load the tab content if not loaded yet!
+    if (!tabs[activeTabIndex].isLoaded) {
+        bool loaded = false;
+        std::wstring backup = tabs[activeTabIndex].backupFile;
+        std::wstring path = tabs[activeTabIndex].filePath;
+        bool modified = tabs[activeTabIndex].isModified;
+        
+        if (!backup.empty()) {
+            std::wstring backupsDir = GetBackupsDir();
+            if (!backupsDir.empty()) {
+                std::wstring backupPath = backupsDir + L"\\" + backup;
+                HANDLE hFile = CreateFileW(backupPath.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+                if (hFile != INVALID_HANDLE_VALUE) {
+                    DWORD size = GetFileSize(hFile, NULL), read;
+                    std::vector<char> buf(size + 1, 0);
+                    if (ReadFile(hFile, buf.data(), size, &read, NULL)) {
+                        Sci(SCI_CLEARALL);
+                        Sci(SCI_APPENDTEXT, read, (LPARAM)buf.data());
+                        if (!modified) Sci(SCI_SETSAVEPOINT);
+                        Sci(SCI_EMPTYUNDOBUFFER);
+                        loaded = true;
+                    }
+                    CloseHandle(hFile);
+                }
+            }
+        }
+        
+        if (!loaded && !path.empty()) {
+            HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+            if (hFile != INVALID_HANDLE_VALUE) {
+                DWORD size = GetFileSize(hFile, NULL), read;
+                std::vector<char> buf(size + 1, 0);
+                if (ReadFile(hFile, buf.data(), size, &read, NULL)) {
+                    Sci(SCI_CLEARALL);
+                    Sci(SCI_APPENDTEXT, read, (LPARAM)buf.data());
+                    if (!modified) Sci(SCI_SETSAVEPOINT);
+                    Sci(SCI_EMPTYUNDOBUFFER);
+                    loaded = true;
+                }
+                CloseHandle(hFile);
+            }
+        }
+        
+        tabs[activeTabIndex].isLoaded = true;
+    }
+    
     activeLineStart = -1; activeLineEnd = -1; ApplySyntax(); SyncLineNumbers(true);
     RecalculateScrollWidth();
     if (searchVisible) UpdateSearchMatches();
@@ -56,7 +111,7 @@ void SwitchToTab(HWND h, size_t idx) {
 }
 
 void CreateNewTab(HWND h, std::wstring path) {
-    tabs.push_back({ path, path.empty() ? L"Untitled" : GetFileName(path), Sci(SCI_CREATEDOCUMENT), false });
+    tabs.push_back({ path, path.empty() ? L"Untitled" : GetFileName(path), Sci(SCI_CREATEDOCUMENT), false, L"", true });
     SwitchToTab(h, tabs.size() - 1); Sci(SCI_EMPTYUNDOBUFFER);
     SaveSession();
 }
@@ -105,7 +160,7 @@ void LoadFileInActiveTab(HWND h, const wchar_t* path) {
         if (ReadFile(hFile, buf.data(), size, &read, NULL)) {
             Sci(SCI_CLEARALL); Sci(SCI_APPENDTEXT, read, (LPARAM)buf.data());
             Sci(SCI_SETSAVEPOINT); Sci(SCI_EMPTYUNDOBUFFER);
-            tabs[activeTabIndex] = { path, GetFileName(path), tabs[activeTabIndex].docPointer, false };
+            tabs[activeTabIndex] = { path, GetFileName(path), tabs[activeTabIndex].docPointer, false, L"", true };
             activeLineStart = -1; activeLineEnd = -1; ApplySyntax(); SyncLineNumbers(true);
             RecalculateScrollWidth();
             if (searchVisible) UpdateSearchMatches();
@@ -157,11 +212,48 @@ std::wstring GetConfigPath() {
     return L"";
 }
 
+static std::string GetDocText(sptr_t docPointer) {
+    sptr_t oldDoc = Sci(SCI_GETDOCPOINTER);
+    Sci(SCI_SETDOCPOINTER, 0, docPointer);
+    int len = Sci(SCI_GETLENGTH);
+    std::vector<char> buf(len + 1, 0);
+    Sci(SCI_GETTEXT, len + 1, (LPARAM)buf.data());
+    Sci(SCI_SETDOCPOINTER, 0, oldDoc);
+    return std::string(buf.data(), len);
+}
+
+static std::wstring GetBackupsDir() {
+    wchar_t appDataPath[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appDataPath))) {
+        std::wstring path = std::wstring(appDataPath) + L"\\Velo\\backups";
+        CreateDirectoryW(path.c_str(), NULL);
+        return path;
+    }
+    return L"";
+}
+
+static void CleanOldBackups(size_t startIdx) {
+    std::wstring backupsDir = GetBackupsDir();
+    if (backupsDir.empty()) return;
+    int idx = (int)startIdx;
+    while (true) {
+        std::wstring backupPath = backupsDir + L"\\backup_" + std::to_wstring(idx) + L".txt";
+        DWORD attrib = GetFileAttributesW(backupPath.c_str());
+        if (attrib != INVALID_FILE_ATTRIBUTES && !(attrib & FILE_ATTRIBUTE_DIRECTORY)) {
+            DeleteFileW(backupPath.c_str());
+            idx++;
+        } else {
+            break;
+        }
+    }
+}
+
 void SaveSession() {
+    isSavingSession = true;
     std::wstring configPath = GetConfigPath();
-    if (configPath.empty()) return;
+    if (configPath.empty()) { isSavingSession = false; return; }
     std::ofstream out(configPath, std::ios::out | std::ios::trunc);
-    if (!out.is_open()) return;
+    if (!out.is_open()) { isSavingSession = false; return; }
     
     out << "[Settings]\n";
     out << "fontSize=" << editorFontSize << "\n";
@@ -174,39 +266,96 @@ void SaveSession() {
     out << "activeTab=" << activeTabIndex << "\n";
     
     out << "\n[Tabs]\n";
-    std::vector<std::wstring> validPaths;
-    for (const auto& tab : tabs) {
-        if (!tab.filePath.empty()) {
-            validPaths.push_back(tab.filePath);
+    out << "count=" << tabs.size() << "\n";
+    for (size_t i = 0; i < tabs.size(); ++i) {
+        std::wstring wpath = tabs[i].filePath;
+        std::string sPath = "";
+        if (!wpath.empty()) {
+            int len = WideCharToMultiByte(CP_UTF8, 0, wpath.c_str(), -1, NULL, 0, NULL, NULL);
+            if (len > 0) {
+                std::vector<char> u8path(len);
+                WideCharToMultiByte(CP_UTF8, 0, wpath.c_str(), -1, u8path.data(), len, NULL, NULL);
+                sPath = u8path.data();
+            }
         }
-    }
-    out << "count=" << validPaths.size() << "\n";
-    for (size_t i = 0; i < validPaths.size(); ++i) {
-        std::wstring wpath = validPaths[i];
-        int len = WideCharToMultiByte(CP_UTF8, 0, wpath.c_str(), -1, NULL, 0, NULL, NULL);
-        if (len > 0) {
-            std::vector<char> u8path(len);
-            WideCharToMultiByte(CP_UTF8, 0, wpath.c_str(), -1, u8path.data(), len, NULL, NULL);
-            std::string s(u8path.data());
-            out << "tab" << i << "=" << s << "\n";
+        
+        std::wstring wtitle = tabs[i].title;
+        std::string sTitle = "Untitled";
+        int lenT = WideCharToMultiByte(CP_UTF8, 0, wtitle.c_str(), -1, NULL, 0, NULL, NULL);
+        if (lenT > 0) {
+            std::vector<char> u8title(lenT);
+            WideCharToMultiByte(CP_UTF8, 0, wtitle.c_str(), -1, u8title.data(), lenT, NULL, NULL);
+            sTitle = u8title.data();
         }
+        
+        bool isModified = false;
+        if (i == activeTabIndex) {
+            isModified = (Sci(SCI_GETMODIFY) != 0);
+        } else {
+            isModified = tabs[i].isModified;
+        }
+        
+        std::string sBackup = "";
+        if (isModified || wpath.empty()) {
+            if (tabs[i].isLoaded) {
+                std::string text = GetDocText(tabs[i].docPointer);
+                std::wstring backupsDir = GetBackupsDir();
+                if (!backupsDir.empty()) {
+                    std::wstring backupPath = backupsDir + L"\\backup_" + std::to_wstring(i) + L".txt";
+                    std::ofstream backupOut(backupPath, std::ios::out | std::ios::trunc | std::ios::binary);
+                    if (backupOut.is_open()) {
+                        backupOut.write(text.data(), text.size());
+                        sBackup = "backup_" + std::to_string(i) + ".txt";
+                    }
+                }
+            } else {
+                int lenB = WideCharToMultiByte(CP_UTF8, 0, tabs[i].backupFile.c_str(), -1, NULL, 0, NULL, NULL);
+                if (lenB > 0) {
+                    std::vector<char> u8backup(lenB);
+                    WideCharToMultiByte(CP_UTF8, 0, tabs[i].backupFile.c_str(), -1, u8backup.data(), lenB, NULL, NULL);
+                    sBackup = u8backup.data();
+                }
+            }
+        } else {
+            std::wstring backupsDir = GetBackupsDir();
+            if (!backupsDir.empty()) {
+                std::wstring backupPath = backupsDir + L"\\backup_" + std::to_wstring(i) + L".txt";
+                DeleteFileW(backupPath.c_str());
+            }
+        }
+        
+        out << "tab_path_" << i << "=" << sPath << "\n";
+        out << "tab_title_" << i << "=" << sTitle << "\n";
+        out << "tab_modified_" << i << "=" << (isModified ? 1 : 0) << "\n";
+        out << "tab_backup_" << i << "=" << sBackup << "\n";
     }
+    
+    CleanOldBackups(tabs.size());
+    isSavingSession = false;
 }
 
 void LoadSession(HWND hwndParent) {
+    isSavingSession = true;
     std::wstring configPath = GetConfigPath();
     if (configPath.empty()) {
+        isSavingSession = false;
         CreateNewTab(hwndParent);
         return;
     }
     std::ifstream in(configPath);
     if (!in.is_open()) {
+        isSavingSession = false;
         CreateNewTab(hwndParent);
         return;
     }
     
     std::string line;
-    std::vector<std::wstring> filePathsToOpen;
+    int tabCount = 0;
+    std::vector<std::wstring> tabPaths;
+    std::vector<std::wstring> tabTitles;
+    std::vector<bool> tabModifieds;
+    std::vector<std::wstring> tabBackups;
+    std::vector<std::wstring> oldPaths;
     int loadedActiveTab = 0;
     
     while (std::getline(in, line)) {
@@ -225,6 +374,52 @@ void LoadSession(HWND hwndParent) {
             else if (key == "showWhitespace") showWhitespace = (val == "1");
             else if (key == "caretStyleBlock") caretStyleBlock = (val == "1");
             else if (key == "activeTab") loadedActiveTab = std::stoi(val);
+            else if (key == "count") {
+                tabCount = std::stoi(val);
+                tabPaths.resize(tabCount);
+                tabTitles.resize(tabCount);
+                tabModifieds.resize(tabCount, false);
+                tabBackups.resize(tabCount);
+            }
+            else if (key.rfind("tab_path_", 0) == 0) {
+                int idx = std::stoi(key.substr(9));
+                if (idx >= 0 && idx < tabCount) {
+                    int len = MultiByteToWideChar(CP_UTF8, 0, val.c_str(), -1, NULL, 0);
+                    if (len > 0) {
+                        std::vector<wchar_t> wval(len);
+                        MultiByteToWideChar(CP_UTF8, 0, val.c_str(), -1, wval.data(), len);
+                        tabPaths[idx] = std::wstring(wval.data());
+                    }
+                }
+            }
+            else if (key.rfind("tab_title_", 0) == 0) {
+                int idx = std::stoi(key.substr(10));
+                if (idx >= 0 && idx < tabCount) {
+                    int len = MultiByteToWideChar(CP_UTF8, 0, val.c_str(), -1, NULL, 0);
+                    if (len > 0) {
+                        std::vector<wchar_t> wval(len);
+                        MultiByteToWideChar(CP_UTF8, 0, val.c_str(), -1, wval.data(), len);
+                        tabTitles[idx] = std::wstring(wval.data());
+                    }
+                }
+            }
+            else if (key.rfind("tab_modified_", 0) == 0) {
+                int idx = std::stoi(key.substr(13));
+                if (idx >= 0 && idx < tabCount) {
+                    tabModifieds[idx] = (val == "1");
+                }
+            }
+            else if (key.rfind("tab_backup_", 0) == 0) {
+                int idx = std::stoi(key.substr(11));
+                if (idx >= 0 && idx < tabCount) {
+                    int len = MultiByteToWideChar(CP_UTF8, 0, val.c_str(), -1, NULL, 0);
+                    if (len > 0) {
+                        std::vector<wchar_t> wval(len);
+                        MultiByteToWideChar(CP_UTF8, 0, val.c_str(), -1, wval.data(), len);
+                        tabBackups[idx] = std::wstring(wval.data());
+                    }
+                }
+            }
             else if (key.rfind("tab", 0) == 0 && key != "tabWidth") {
                 int len = MultiByteToWideChar(CP_UTF8, 0, val.c_str(), -1, NULL, 0);
                 if (len > 0) {
@@ -232,17 +427,47 @@ void LoadSession(HWND hwndParent) {
                     MultiByteToWideChar(CP_UTF8, 0, val.c_str(), -1, wval.data(), len);
                     std::wstring ws(wval.data());
                     if (!ws.empty()) {
-                        filePathsToOpen.push_back(ws);
+                        oldPaths.push_back(ws);
                     }
                 }
             }
         } catch (...) {}
     }
     
-    if (filePathsToOpen.empty()) {
-        CreateNewTab(hwndParent);
-    } else {
-        for (const auto& path : filePathsToOpen) {
+    if (tabCount > 0 && (tabPaths.empty() || tabPaths[0].empty()) && !oldPaths.empty()) {
+        tabCount = (int)oldPaths.size();
+        tabPaths = oldPaths;
+        tabTitles.resize(tabCount);
+        for (int i = 0; i < tabCount; ++i) {
+            tabTitles[i] = GetFileName(tabPaths[i]);
+        }
+        tabModifieds.assign(tabCount, false);
+        tabBackups.assign(tabCount, L"");
+    }
+    
+    if (tabCount > 0) {
+        for (int i = 0; i < tabCount; ++i) {
+            std::wstring path = tabPaths[i];
+            std::wstring title = tabTitles[i];
+            sptr_t doc = Sci(SCI_CREATEDOCUMENT);
+            bool modified = tabModifieds[i];
+            std::wstring backup = tabBackups[i];
+            tabs.push_back({ path, title, doc, modified, backup, false });
+        }
+        
+        isSavingSession = false;
+        if (tabs.empty()) {
+            CreateNewTab(hwndParent);
+        } else {
+            if (loadedActiveTab >= (int)tabs.size()) {
+                loadedActiveTab = (int)tabs.size() - 1;
+            }
+            if (loadedActiveTab < 0) loadedActiveTab = 0;
+            SwitchToTab(hwndParent, loadedActiveTab);
+        }
+    } else if (!oldPaths.empty()) {
+        isSavingSession = false;
+        for (const auto& path : oldPaths) {
             DWORD attrib = GetFileAttributesW(path.c_str());
             if (attrib != INVALID_FILE_ATTRIBUTES && !(attrib & FILE_ATTRIBUTE_DIRECTORY)) {
                 CreateNewTab(hwndParent, path);
@@ -258,5 +483,8 @@ void LoadSession(HWND hwndParent) {
             if (loadedActiveTab < 0) loadedActiveTab = 0;
             SwitchToTab(hwndParent, loadedActiveTab);
         }
+    } else {
+        isSavingSession = false;
+        CreateNewTab(hwndParent);
     }
 }

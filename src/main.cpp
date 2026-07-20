@@ -50,6 +50,7 @@ bool autoCloseBraces = true;
 bool showIndentGuides = true;
 bool showWhitespace = false;
 bool caretStyleBlock = false;
+bool isSavingSession = false;
 
 LRESULT CALLBACK SearchEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (msg == WM_KEYDOWN) {
@@ -405,6 +406,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             break;
         }
         case WM_NOTIFY: {
+            if (isSavingSession) return 0;
             if (lParam && ((SCNotification*)lParam)->nmhdr.hwndFrom == hwndScintilla) {
                 SCNotification* n = (SCNotification*)lParam;
                 if (n->nmhdr.code == SCN_MODIFIED) {

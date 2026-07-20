@@ -51,13 +51,16 @@ struct Tab {
     std::wstring filePath, title;
     sptr_t docPointer;
     bool isModified;
+    std::wstring backupFile = L"";
+    bool isLoaded = false;
 };
 
 enum HoverElement {
     HOVER_NONE, HOVER_MINIMIZE, HOVER_MAXIMIZE, HOVER_CLOSE, HOVER_UNDO, HOVER_REDO, HOVER_ADD_TAB,
     HOVER_TAB_BASE, HOVER_TAB_CLOSE_BASE = 100, HOVER_SETTINGS = 200, HOVER_SEARCH,
     HOVER_SEARCH_PREV, HOVER_SEARCH_NEXT, HOVER_SEARCH_SELECT_ALL, HOVER_SEARCH_REPLACE_TOGGLE,
-    HOVER_SEARCH_CLOSE, HOVER_REPLACE_NEXT, HOVER_REPLACE_ALL
+    HOVER_SEARCH_CLOSE, HOVER_REPLACE_NEXT, HOVER_REPLACE_ALL,
+    HOVER_STATUS_EOL
 };
 
 struct DlgButton {
@@ -120,6 +123,7 @@ extern bool autoCloseBraces;
 extern bool showIndentGuides;
 extern bool showWhitespace;
 extern bool caretStyleBlock;
+extern bool isSavingSession;
 
 // Utilities
 void FillRectColor(HDC hdc, const RECT& rc, COLORREF color);
