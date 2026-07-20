@@ -53,6 +53,7 @@ struct Tab {
     bool isModified;
     std::wstring backupFile = L"";
     bool isLoaded = false;
+    bool hasUndoableBackupLoad = false;
 };
 
 enum HoverElement {

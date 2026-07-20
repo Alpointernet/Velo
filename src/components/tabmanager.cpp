@@ -98,6 +98,7 @@ void SwitchToTab(HWND h, size_t idx) {
                         Sci(SCI_SETSEL, 0, Sci(SCI_GETLENGTH));
                         Sci(SCI_REPLACESEL, 0, (LPARAM)buf.data());
                         Sci(SCI_SETSEL, 0, 0); // Reset selection/cursor
+                        tabs[activeTabIndex].hasUndoableBackupLoad = true;
                         backupLoaded = true;
                         loaded = true;
                     }
@@ -205,7 +206,9 @@ void DoFileSave(HWND h) {
     if (hFile != INVALID_HANDLE_VALUE) {
         int len = Sci(SCI_GETLENGTH); std::vector<char> buf(len + 1, 0); Sci(SCI_GETTEXT, len + 1, (LPARAM)buf.data());
         DWORD written; WriteFile(hFile, buf.data(), len, &written, NULL); CloseHandle(hFile);
-        Sci(SCI_SETSAVEPOINT); tabs[activeTabIndex].isModified = false; ApplySyntax(); UpdateUI(h);
+        Sci(SCI_SETSAVEPOINT); tabs[activeTabIndex].isModified = false;
+        tabs[activeTabIndex].hasUndoableBackupLoad = false;
+        ApplySyntax(); UpdateUI(h);
         SaveSession();
     }
 }
