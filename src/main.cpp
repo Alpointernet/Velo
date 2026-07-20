@@ -297,7 +297,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         case WM_CTLCOLOREDIT: {
             if ((HWND)lParam == hwndSearchEdit || (HWND)lParam == hwndReplaceEdit) {
-                SetTextColor((HDC)wParam, 0xBFB2AB); SetBkColor((HDC)wParam, 0x2B2521);
+                SetTextColor((HDC)wParam, 0xD4D4D4); SetBkColor((HDC)wParam, 0x2B2521);
                 static HBRUSH hbrBg = CreateSolidBrush(0x2B2521); return (INT_PTR)hbrBg;
             }
             break;
@@ -388,10 +388,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
                 if (searchVisible) {
                     int searchY = pad.top + 70 + 10;
-                    SetWindowPos(hwndSearchEdit, NULL, pad.left + 15, searchY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
+                    SetWindowPos(hwndSearchEdit, NULL, pad.left + 9, searchY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
                     if (replaceVisible) {
                         int replaceY = pad.top + 70 + 36 + 10;
-                        SetWindowPos(hwndReplaceEdit, NULL, pad.left + 15, replaceY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
+                        SetWindowPos(hwndReplaceEdit, NULL, pad.left + 9, replaceY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
                     } else {
                         ShowWindow(hwndReplaceEdit, SW_HIDE);
                     }

@@ -123,21 +123,21 @@ HoverElement HitTest(HWND h, POINT pt) {
     if (searchVisible && pt.y >= pad.top + 70 && pt.y < pad.top + 70 + (replaceVisible ? 72 : 36)) {
         int relY = pt.y - (pad.top + 70);
         if (relY < 36) {
-            if (pt.x >= rc.right - pad.right - 278 && pt.x < rc.right - pad.right - 254 && pt.y >= pad.top + 70 + 6 && pt.y < pad.top + 70 + 30) return HOVER_SEARCH_PREV;
-            if (pt.x >= rc.right - pad.right - 249 && pt.x < rc.right - pad.right - 225 && pt.y >= pad.top + 70 + 6 && pt.y < pad.top + 70 + 30) return HOVER_SEARCH_NEXT;
-            if (pt.x >= rc.right - pad.right - 215 && pt.x < rc.right - pad.right - 135 && pt.y >= pad.top + 70 + 6 && pt.y < pad.top + 70 + 30) return HOVER_SEARCH_SELECT_ALL;
-            if (pt.x >= rc.right - pad.right - 125 && pt.x < rc.right - pad.right - 45 && pt.y >= pad.top + 70 + 6 && pt.y < pad.top + 70 + 30) return HOVER_SEARCH_REPLACE_TOGGLE;
-            if (pt.x >= rc.right - pad.right - 35 && pt.x < rc.right - pad.right - 11 && pt.y >= pad.top + 70 + 6 && pt.y < pad.top + 70 + 30) return HOVER_SEARCH_CLOSE;
+            if (pt.x >= rc.right - pad.right - 275 && pt.x < rc.right - pad.right - 251 && pt.y >= pad.top + 70 + 6 && pt.y < pad.top + 70 + 30) return HOVER_SEARCH_PREV;
+            if (pt.x >= rc.right - pad.right - 246 && pt.x < rc.right - pad.right - 222 && pt.y >= pad.top + 70 + 6 && pt.y < pad.top + 70 + 30) return HOVER_SEARCH_NEXT;
+            if (pt.x >= rc.right - pad.right - 212 && pt.x < rc.right - pad.right - 132 && pt.y >= pad.top + 70 + 6 && pt.y < pad.top + 70 + 30) return HOVER_SEARCH_SELECT_ALL;
+            if (pt.x >= rc.right - pad.right - 122 && pt.x < rc.right - pad.right - 42 && pt.y >= pad.top + 70 + 6 && pt.y < pad.top + 70 + 30) return HOVER_SEARCH_REPLACE_TOGGLE;
+            if (pt.x >= rc.right - pad.right - 32 && pt.x < rc.right - pad.right - 8 && pt.y >= pad.top + 70 + 6 && pt.y < pad.top + 70 + 30) return HOVER_SEARCH_CLOSE;
         } else {
-            if (pt.x >= pad.left + 355 && pt.x < pad.left + 435 && pt.y >= pad.top + 70 + 36 + 6 && pt.y < pad.top + 70 + 36 + 30) return HOVER_REPLACE_NEXT;
-            if (pt.x >= pad.left + 445 && pt.x < pad.left + 535 && pt.y >= pad.top + 70 + 36 + 6 && pt.y < pad.top + 70 + 36 + 30) return HOVER_REPLACE_ALL;
+            if (pt.x >= pad.left + 350 && pt.x < pad.left + 430 && pt.y >= pad.top + 70 + 36 + 6 && pt.y < pad.top + 70 + 36 + 30) return HOVER_REPLACE_NEXT;
+            if (pt.x >= pad.left + 440 && pt.x < pad.left + 530 && pt.y >= pad.top + 70 + 36 + 6 && pt.y < pad.top + 70 + 36 + 30) return HOVER_REPLACE_ALL;
         }
     }
     return HOVER_NONE;
 }
 
 void DrawBtn(HDC hdc, RECT rc, const wchar_t* text, bool hover, bool press, bool isClose, HFONT font, bool disabled, bool toggled, bool elevated) {
-    COLORREF textCol = disabled ? 0x443630 : 0xBFB2AB;
+    COLORREF textCol = disabled ? 0x443630 : 0xD4D4D4;
     COLORREF bgCol = elevated ? 0x322A26 : 0;
     bool hasBg = elevated;
     if (!disabled) {
@@ -259,8 +259,8 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     RECT pad = GetPad(h);
     FillRectColor(hdc, { 0, 0, rc.right, 24 }, 0x1F1A18);
     FillRectColor(hdc, { pad.left, 0, rc.right - pad.right, 1 }, 0x3C312C);
-    DrawBtn(hdc, { pad.left, 0, pad.left + 30, 24 }, L"\uE713", hoverElement == HOVER_SETTINGS, pressedElement == HOVER_SETTINGS);
-    DrawBtn(hdc, { pad.left + 30, 0, pad.left + 60, 24 }, L"\uE721", hoverElement == HOVER_SEARCH, pressedElement == HOVER_SEARCH);
+    DrawBtn(hdc, { pad.left, 0, pad.left + 30, 24 }, L"\uE713", hoverElement == HOVER_SETTINGS, pressedElement == HOVER_SETTINGS, false, hIconFont, false, false, false);
+    DrawBtn(hdc, { pad.left + 30, 0, pad.left + 60, 24 }, L"\uE721", hoverElement == HOVER_SEARCH, pressedElement == HOVER_SEARCH, false, hIconFont, false, false, false);
     if (searchVisible) FillRectColor(hdc, { pad.left + 30, 22, pad.left + 60, 24 }, 0xFF8B52);
     SetBkMode(hdc, TRANSPARENT); SetTextColor(hdc, 0xBFB2AB); HFONT oldFont = (HFONT)SelectObject(hdc, hSmallFont);
     int pos = Sci(SCI_GETCURRENTPOS), line = Sci(SCI_LINEFROMPOSITION, pos) + 1, col = Sci(SCI_GETCOLUMN, pos) + 1, eolMode = Sci(SCI_GETEOLMODE);
@@ -314,14 +314,14 @@ void PaintSearchBar(HWND h, HDC hdc, const RECT& rc) {
     int height = replaceVisible ? 72 : 36;
     
     // Background
-    FillRectColor(hdc, { 0, topY, rc.right, topY + height }, 0x2B2521);
+    FillRectColor(hdc, { 0, topY, rc.right, topY + height }, 0x1F1A18);
     
     // Bottom border
     FillRectColor(hdc, { pad.left, topY + height - 1, rc.right - pad.right, topY + height }, 0x3C312C);
     
     // Draw Border around Edit Box
-    RECT rcSearchBorder = { pad.left + 14, topY + 7, pad.left + 14 + 332, topY + 7 + 22 };
-    HBRUSH hBr = CreateSolidBrush(0x3C312C);
+    RECT rcSearchBorder = { pad.left + 8, topY + 7, pad.left + 8 + 332, topY + 7 + 22 };
+    HBRUSH hBr = CreateSolidBrush(0x51443E);
     FrameRect(hdc, &rcSearchBorder, hBr);
     DeleteObject(hBr);
     
@@ -342,45 +342,45 @@ void PaintSearchBar(HWND h, HDC hdc, const RECT& rc) {
         SetTextColor(hdc, 0x858585); // Muted gray
         SetBkMode(hdc, TRANSPARENT);
         HFONT oldFont = (HFONT)SelectObject(hdc, hSmallFont);
-        RECT rcCounter = { pad.left + 355, topY, pad.left + 420, topY + 36 };
+        RECT rcCounter = { pad.left + 350, topY, pad.left + 420, topY + 36 };
         DrawTextW(hdc, cBuf, -1, &rcCounter, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
         SelectObject(hdc, oldFont);
     }
     
     // Prev Arrow (Segoe MDL2 Left Arrow / Chevron Left)
-    RECT rcPrev = { rc.right - pad.right - 278, topY + 6, rc.right - pad.right - 254, topY + 30 };
+    RECT rcPrev = { rc.right - pad.right - 275, topY + 6, rc.right - pad.right - 251, topY + 30 };
     DrawBtn(hdc, rcPrev, L"\uE00E", hoverElement == HOVER_SEARCH_PREV, pressedElement == HOVER_SEARCH_PREV);
     
     // Next Arrow (Segoe MDL2 Right Arrow / Chevron Right)
-    RECT rcNext = { rc.right - pad.right - 249, topY + 6, rc.right - pad.right - 225, topY + 30 };
+    RECT rcNext = { rc.right - pad.right - 246, topY + 6, rc.right - pad.right - 222, topY + 30 };
     DrawBtn(hdc, rcNext, L"\uE00F", hoverElement == HOVER_SEARCH_NEXT, pressedElement == HOVER_SEARCH_NEXT);
     
     // Select All
-    RECT rcSelectAll = { rc.right - pad.right - 215, topY + 6, rc.right - pad.right - 135, topY + 30 };
+    RECT rcSelectAll = { rc.right - pad.right - 212, topY + 6, rc.right - pad.right - 132, topY + 30 };
     DrawBtn(hdc, rcSelectAll, L"Select All", hoverElement == HOVER_SEARCH_SELECT_ALL, pressedElement == HOVER_SEARCH_SELECT_ALL, false, hUIFont);
     
     // Replace Toggle
-    RECT rcReplaceToggle = { rc.right - pad.right - 125, topY + 6, rc.right - pad.right - 45, topY + 30 };
+    RECT rcReplaceToggle = { rc.right - pad.right - 122, topY + 6, rc.right - pad.right - 42, topY + 30 };
     DrawBtn(hdc, rcReplaceToggle, L"Replace...", hoverElement == HOVER_SEARCH_REPLACE_TOGGLE, pressedElement == HOVER_SEARCH_REPLACE_TOGGLE, false, hUIFont, false, replaceVisible);
     
     // Close button
-    RECT rcClose = { rc.right - pad.right - 35, topY + 6, rc.right - pad.right - 11, topY + 30 };
+    RECT rcClose = { rc.right - pad.right - 32, topY + 6, rc.right - pad.right - 8, topY + 30 };
     DrawBtn(hdc, rcClose, L"\uE711", hoverElement == HOVER_SEARCH_CLOSE, pressedElement == HOVER_SEARCH_CLOSE, true, hIconFont, false, false, false);
     
     // Row 2 (Replace)
     if (replaceVisible) {
         // Draw Border around Replace Edit Box
-        RECT rcReplaceBorder = { pad.left + 14, topY + 36 + 7, pad.left + 14 + 332, topY + 36 + 7 + 22 };
-        HBRUSH hBrRep = CreateSolidBrush(0x3C312C);
+        RECT rcReplaceBorder = { pad.left + 8, topY + 36 + 7, pad.left + 8 + 332, topY + 36 + 7 + 22 };
+        HBRUSH hBrRep = CreateSolidBrush(0x51443E);
         FrameRect(hdc, &rcReplaceBorder, hBrRep);
         DeleteObject(hBrRep);
         
         // Replace Next Button
-        RECT rcRepNext = { pad.left + 355, topY + 36 + 6, pad.left + 435, topY + 36 + 30 };
+        RECT rcRepNext = { pad.left + 350, topY + 36 + 6, pad.left + 430, topY + 36 + 30 };
         DrawBtn(hdc, rcRepNext, L"Replace", hoverElement == HOVER_REPLACE_NEXT, pressedElement == HOVER_REPLACE_NEXT, false, hUIFont);
         
         // Replace All Button
-        RECT rcRepAll = { pad.left + 445, topY + 36 + 6, pad.left + 535, topY + 36 + 30 };
+        RECT rcRepAll = { pad.left + 440, topY + 36 + 6, pad.left + 530, topY + 36 + 30 };
         DrawBtn(hdc, rcRepAll, L"Replace All", hoverElement == HOVER_REPLACE_ALL, pressedElement == HOVER_REPLACE_ALL, false, hUIFont);
     }
 }
