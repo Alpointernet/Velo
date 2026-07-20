@@ -209,6 +209,13 @@ void StyleScintilla(HWND hwndSci) {
 
 void SyncLineNumbers(bool rebuild) {
     int total = Sci(SCI_GETLINECOUNT);
+    if (!rebuild && total > 0) {
+        char testBuf[16] = { 0 };
+        Sci(SCI_MARGINGETTEXT, 0, (LPARAM)testBuf);
+        if (testBuf[0] == 0) {
+            rebuild = true;
+        }
+    }
     if (rebuild) {
         for (int i = 0; i < total; ++i) {
             char buf[16]; sprintf_s(buf, "%d ", i + 1); 
