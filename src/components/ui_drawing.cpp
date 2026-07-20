@@ -204,8 +204,8 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
     
     bool canUndo = Sci(SCI_CANUNDO) != 0;
     bool canRedo = Sci(SCI_CANREDO) != 0;
-    DrawBtn(hdc, { pad.left + 10, pad.top, pad.left + 35, pad.top + 35 }, L"\uE7A7", hoverElement == HOVER_UNDO, pressedElement == HOVER_UNDO, false, hIconFont, !canUndo);
-    DrawBtn(hdc, { pad.left + 35, pad.top, pad.left + 60, pad.top + 35 }, L"\uE7A6", hoverElement == HOVER_REDO, pressedElement == HOVER_REDO, false, hIconFont, !canRedo);
+    DrawBtn(hdc, { pad.left + 10, pad.top, pad.left + 35, pad.top + 35 }, L"\uE7A7", hoverElement == HOVER_UNDO, pressedElement == HOVER_UNDO, false, hIconFont, !canUndo, false, false);
+    DrawBtn(hdc, { pad.left + 35, pad.top, pad.left + 60, pad.top + 35 }, L"\uE7A6", hoverElement == HOVER_REDO, pressedElement == HOVER_REDO, false, hIconFont, !canRedo, false, false);
     
     int startX = pad.left + 70;
     int totalW = 0;
@@ -524,6 +524,7 @@ void OnElementClicked(HWND h, HoverElement el) {
         int newMode = (eolMode == SC_EOL_CRLF) ? SC_EOL_LF : SC_EOL_CRLF;
         Sci(SCI_SETEOLMODE, newMode);
         Sci(SCI_CONVERTEOLS, newMode);
+        SyncLineNumbers(true);
         SaveSession();
         UpdateUI(h);
     }

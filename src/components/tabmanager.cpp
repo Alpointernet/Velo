@@ -49,7 +49,7 @@ void SwitchToTab(HWND h, size_t idx) {
     if (idx >= tabs.size()) return;
     
     // Save current active tab modified state
-    if (activeTabIndex < tabs.size()) {
+    if (activeTabIndex < tabs.size() && tabs[activeTabIndex].isLoaded) {
         tabs[activeTabIndex].isModified = (Sci(SCI_GETMODIFY) != 0);
     }
     
