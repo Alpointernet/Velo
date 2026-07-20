@@ -60,8 +60,32 @@ void SwitchToTab(HWND h, size_t idx) {
         bool loaded = false;
         std::wstring backup = tabs[activeTabIndex].backupFile;
         std::wstring path = tabs[activeTabIndex].filePath;
-        bool modified = tabs[activeTabIndex].isModified;
         
+        // 1. Load the original disk content first (if available) as the baseline savepoint.
+        std::vector<char> diskBuf;
+        bool diskLoaded = false;
+        if (!path.empty()) {
+            HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+            if (hFile != INVALID_HANDLE_VALUE) {
+                DWORD size = GetFileSize(hFile, NULL), read;
+                std::vector<char> buf(size + 1, 0);
+                if (ReadFile(hFile, buf.data(), size, &read, NULL)) {
+                    diskBuf.assign(buf.begin(), buf.begin() + read);
+                    diskLoaded = true;
+                }
+                CloseHandle(hFile);
+            }
+        }
+        
+        Sci(SCI_CLEARALL);
+        if (diskLoaded) {
+            Sci(SCI_APPENDTEXT, diskBuf.size(), (LPARAM)diskBuf.data());
+        }
+        Sci(SCI_SETSAVEPOINT);
+        Sci(SCI_EMPTYUNDOBUFFER);
+        
+        // 2. If a backup file exists, replace the baseline content with the backup content, creating an undoable state.
+        bool backupLoaded = false;
         if (!backup.empty()) {
             std::wstring backupsDir = GetBackupsDir();
             if (!backupsDir.empty()) {
@@ -71,15 +95,10 @@ void SwitchToTab(HWND h, size_t idx) {
                     DWORD size = GetFileSize(hFile, NULL), read;
                     std::vector<char> buf(size + 1, 0);
                     if (ReadFile(hFile, buf.data(), size, &read, NULL)) {
-                        Sci(SCI_CLEARALL);
-                        Sci(SCI_APPENDTEXT, read, (LPARAM)buf.data());
-                        Sci(SCI_EMPTYUNDOBUFFER);
-                        if (modified) {
-                            Sci(SCI_INSERTTEXT, 0, (LPARAM)" ");
-                            Sci(SCI_DELETERANGE, 0, 1);
-                        } else {
-                            Sci(SCI_SETSAVEPOINT);
-                        }
+                        Sci(SCI_SETSEL, 0, Sci(SCI_GETLENGTH));
+                        Sci(SCI_REPLACESEL, 0, (LPARAM)buf.data());
+                        Sci(SCI_SETSEL, 0, 0); // Reset selection/cursor
+                        backupLoaded = true;
                         loaded = true;
                     }
                     CloseHandle(hFile);
@@ -87,28 +106,18 @@ void SwitchToTab(HWND h, size_t idx) {
             }
         }
         
-        if (!loaded && !path.empty()) {
-            HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
-            if (hFile != INVALID_HANDLE_VALUE) {
-                DWORD size = GetFileSize(hFile, NULL), read;
-                std::vector<char> buf(size + 1, 0);
-                if (ReadFile(hFile, buf.data(), size, &read, NULL)) {
-                    Sci(SCI_CLEARALL);
-                    Sci(SCI_APPENDTEXT, read, (LPARAM)buf.data());
-                    Sci(SCI_EMPTYUNDOBUFFER);
-                    if (modified) {
-                        Sci(SCI_INSERTTEXT, 0, (LPARAM)" ");
-                        Sci(SCI_DELETERANGE, 0, 1);
-                    } else {
-                        Sci(SCI_SETSAVEPOINT);
-                    }
-                    loaded = true;
-                }
-                CloseHandle(hFile);
-            }
+        if (diskLoaded && !backupLoaded) {
+            loaded = true;
+        }
+        
+        if (!loaded) {
+            Sci(SCI_CLEARALL);
+            Sci(SCI_SETSAVEPOINT);
+            Sci(SCI_EMPTYUNDOBUFFER);
         }
         
         tabs[activeTabIndex].isLoaded = true;
+        tabs[activeTabIndex].isModified = (Sci(SCI_GETMODIFY) != 0);
     }
     
     activeLineStart = -1; activeLineEnd = -1; ApplySyntax(); SyncLineNumbers(true);
