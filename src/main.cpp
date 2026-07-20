@@ -114,6 +114,7 @@ LRESULT CALLBACK TabRenameEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                     } else {
                         tabs[tabRenameIndex].title = newName;
                     }
+                    if (tabRenameIndex == activeTabIndex) StyleScintilla(hwndScintilla);
                     UpdateUI(hwndMain);
                 }
             }
@@ -213,7 +214,10 @@ LRESULT CALLBACK SciSubProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
         }
     }
-    if (msg == WM_CHAR && autoCloseBraces) {
+    if (msg == WM_CHAR) {
+        if (wParam < 32 && wParam != VK_RETURN && wParam != VK_TAB && wParam != VK_BACK) return 0;
+        
+        if (autoCloseBraces) {
         wchar_t ch = (wchar_t)wParam;
         if (ch == '(' || ch == '{' || ch == '[' || ch == '"' || ch == '\'') {
             int sSel = Sci(SCI_GETSELECTIONSTART);
@@ -230,6 +234,7 @@ LRESULT CALLBACK SciSubProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 Sci(SCI_REPLACESEL, 0, (LPARAM)wrapped.c_str());
                 Sci(SCI_SETSEL, sSel + 1, eSel + 1);
                 return 0;
+            }
             }
         }
     }
@@ -271,9 +276,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         case WM_CREATE: {
             hwndMain = hwnd; ApplyDarkMode(hwnd);
-            hUIFont = CreateFontW(15, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, L"Inter Medium");
-            hIconFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, L"Segoe MDL2 Assets");
-            hSmallFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, L"Inter Light");
+            hUIFont = CreateFontW(15, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Inter Medium");
+            hIconFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe MDL2 Assets");
+            hSmallFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Inter Light");
             HMODULE hSci = LoadLibraryW(L"SciLexer.dll"); if (!hSci) hSci = LoadLibraryW(L"Scintilla.dll");
             if (!hSci) { ShowCustomMessageBox(hwnd, L"Failed to load Scintilla library", L"Error", MB_OK); return -1; }
             LoadLibraryW(L"lexilla.dll");
@@ -347,7 +352,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             break;
         }
         case WM_CTLCOLOREDIT: {
-            if ((HWND)lParam == hwndSearchEdit || (HWND)lParam == hwndReplaceEdit) {
+            if ((HWND)lParam == hwndSearchEdit || (HWND)lParam == hwndReplaceEdit || (HWND)lParam == hwndTabRenameEdit) {
                 SetTextColor((HDC)wParam, 0xD4D4D4); SetBkColor((HDC)wParam, 0x2B2521);
                 static HBRUSH hbrBg = CreateSolidBrush(0x2B2521); return (INT_PTR)hbrBg;
             }

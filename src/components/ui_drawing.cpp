@@ -333,7 +333,7 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     
     // Language
     SetTextColor(hdc, 0xBFB2AB);
-    RECT rcLang = { 0, 0, rightLimit, 24 };
+    RECT rcLang = { 0, 2, rightLimit, 26 };
     DrawTextW(hdc, lang, -1, &rcLang, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     
     RECT rcLangMeasure = { 0 }; DrawTextW(hdc, lang, -1, &rcLangMeasure, DT_CALCRECT | DT_SINGLELINE);
@@ -342,7 +342,7 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     
     // Divider
     SetTextColor(hdc, 0x51443E);
-    RECT rcDiv1 = { 0, 0, rightLimit, 24 };
+    RECT rcDiv1 = { 0, 2, rightLimit, 26 };
     DrawTextW(hdc, L"   |   ", -1, &rcDiv1, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     
     RECT rcDivMeasure = { 0 }; DrawTextW(hdc, L"   |   ", -1, &rcDivMeasure, DT_CALCRECT | DT_SINGLELINE);
@@ -352,7 +352,7 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     // EOL Format (Highlights on hover!)
     bool isEolHovered = (hoverElement == HOVER_STATUS_EOL);
     SetTextColor(hdc, isEolHovered ? 0xFF8B52 : 0xBFB2AB);
-    RECT rcEol = { 0, 0, rightLimit, 24 };
+    RECT rcEol = { 0, 2, rightLimit, 26 };
     DrawTextW(hdc, eol, -1, &rcEol, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     
     RECT rcEolMeasure = { 0 }; DrawTextW(hdc, eol, -1, &rcEolMeasure, DT_CALCRECT | DT_SINGLELINE);
@@ -361,13 +361,13 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     
     // Divider
     SetTextColor(hdc, 0x51443E);
-    RECT rcDiv2 = { 0, 0, rightLimit, 24 };
+    RECT rcDiv2 = { 0, 2, rightLimit, 26 };
     DrawTextW(hdc, L"   |   ", -1, &rcDiv2, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     rightLimit -= wDiv;
     
     // Encoding
     SetTextColor(hdc, 0xBFB2AB);
-    RECT rcEnc = { 0, 0, rightLimit, 24 };
+    RECT rcEnc = { 0, 2, rightLimit, 26 };
     DrawTextW(hdc, L"UTF-8", -1, &rcEnc, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     
     RECT rcEncMeasure = { 0 }; DrawTextW(hdc, L"UTF-8", -1, &rcEncMeasure, DT_CALCRECT | DT_SINGLELINE);
@@ -376,14 +376,14 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     
     // Divider
     SetTextColor(hdc, 0x51443E);
-    RECT rcDiv3 = { 0, 0, rightLimit, 24 };
+    RECT rcDiv3 = { 0, 2, rightLimit, 26 };
     DrawTextW(hdc, L"   |   ", -1, &rcDiv3, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     rightLimit -= wDiv;
     
     // Position Info
     SetTextColor(hdc, 0xBFB2AB);
     wchar_t posInfo[128]; swprintf_s(posInfo, L"Ln %d, Col %d", line, col);
-    RECT rcPos = { 0, 0, rightLimit, 24 };
+    RECT rcPos = { 0, 2, rightLimit, 26 };
     DrawTextW(hdc, posInfo, -1, &rcPos, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     
     SelectObject(hdc, oldFont);
