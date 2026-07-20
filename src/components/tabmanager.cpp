@@ -47,9 +47,10 @@ int GetTabWidth(size_t index) {
 void SwitchToTab(HWND h, size_t idx) {
     if (idx >= tabs.size()) return;
     
-    // Save current active tab modified state
+    // Save current active tab modified state and EOL mode
     if (activeTabIndex < tabs.size() && tabs[activeTabIndex].isLoaded) {
         tabs[activeTabIndex].isModified = (Sci(SCI_GETMODIFY) != 0);
+        tabs[activeTabIndex].eolMode = (int)Sci(SCI_GETEOLMODE);
     }
     
     activeTabIndex = idx; 
@@ -98,7 +99,6 @@ void SwitchToTab(HWND h, size_t idx) {
                         Sci(SCI_SETSEL, 0, Sci(SCI_GETLENGTH));
                         Sci(SCI_REPLACESEL, 0, (LPARAM)buf.data());
                         Sci(SCI_SETSEL, 0, 0); // Reset selection/cursor
-                        tabs[activeTabIndex].hasUndoableBackupLoad = true;
                         backupLoaded = true;
                         loaded = true;
                     }
@@ -118,6 +118,7 @@ void SwitchToTab(HWND h, size_t idx) {
         }
         
         tabs[activeTabIndex].isLoaded = true;
+        Sci(SCI_SETEOLMODE, tabs[activeTabIndex].eolMode);
         tabs[activeTabIndex].isModified = (Sci(SCI_GETMODIFY) != 0);
     }
     
@@ -206,9 +207,7 @@ void DoFileSave(HWND h) {
     if (hFile != INVALID_HANDLE_VALUE) {
         int len = Sci(SCI_GETLENGTH); std::vector<char> buf(len + 1, 0); Sci(SCI_GETTEXT, len + 1, (LPARAM)buf.data());
         DWORD written; WriteFile(hFile, buf.data(), len, &written, NULL); CloseHandle(hFile);
-        Sci(SCI_SETSAVEPOINT); tabs[activeTabIndex].isModified = false;
-        tabs[activeTabIndex].hasUndoableBackupLoad = false;
-        ApplySyntax(); UpdateUI(h);
+        Sci(SCI_SETSAVEPOINT); tabs[activeTabIndex].isModified = false; ApplySyntax(); UpdateUI(h);
         SaveSession();
     }
 }
@@ -345,10 +344,12 @@ void SaveSession() {
             }
         }
         
+        int eolMode = (i == activeTabIndex) ? (int)Sci(SCI_GETEOLMODE) : tabs[i].eolMode;
         out << "tab_path_" << i << "=" << sPath << "\n";
         out << "tab_title_" << i << "=" << sTitle << "\n";
         out << "tab_modified_" << i << "=" << (isModified ? 1 : 0) << "\n";
         out << "tab_backup_" << i << "=" << sBackup << "\n";
+        out << "tab_eol_" << i << "=" << eolMode << "\n";
     }
     
     CleanOldBackups(tabs.size());
@@ -376,6 +377,7 @@ void LoadSession(HWND hwndParent) {
     std::vector<std::wstring> tabTitles;
     std::vector<bool> tabModifieds;
     std::vector<std::wstring> tabBackups;
+    std::vector<int> tabEols;
     std::vector<std::wstring> oldPaths;
     int loadedActiveTab = 0;
     
@@ -401,6 +403,7 @@ void LoadSession(HWND hwndParent) {
                 tabTitles.resize(tabCount);
                 tabModifieds.resize(tabCount, false);
                 tabBackups.resize(tabCount);
+                tabEols.resize(tabCount, 0);
             }
             else if (key.rfind("tab_path_", 0) == 0) {
                 int idx = std::stoi(key.substr(9));
@@ -441,6 +444,12 @@ void LoadSession(HWND hwndParent) {
                     }
                 }
             }
+            else if (key.rfind("tab_eol_", 0) == 0) {
+                int idx = std::stoi(key.substr(8));
+                if (idx >= 0 && idx < tabCount) {
+                    tabEols[idx] = std::stoi(val);
+                }
+            }
             else if (key.rfind("tab", 0) == 0 && key != "tabWidth") {
                 int len = MultiByteToWideChar(CP_UTF8, 0, val.c_str(), -1, NULL, 0);
                 if (len > 0) {
@@ -464,6 +473,7 @@ void LoadSession(HWND hwndParent) {
         }
         tabModifieds.assign(tabCount, false);
         tabBackups.assign(tabCount, L"");
+        tabEols.assign(tabCount, 0);
     }
     
     if (tabCount > 0) {
@@ -473,7 +483,8 @@ void LoadSession(HWND hwndParent) {
             sptr_t doc = Sci(SCI_CREATEDOCUMENT);
             std::wstring backup = tabBackups[i];
             bool modified = tabModifieds[i] || !backup.empty();
-            tabs.push_back({ path, title, doc, modified, backup, false });
+            int eol = tabEols[i];
+            tabs.push_back({ path, title, doc, modified, backup, false, eol });
         }
         
         isSavingSession = false;
