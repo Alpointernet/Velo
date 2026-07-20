@@ -417,12 +417,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     if (activeTabIndex < tabs.size() && tabs[activeTabIndex].isModified != (Sci(SCI_GETMODIFY) != 0)) {
                         tabs[activeTabIndex].isModified = (Sci(SCI_GETMODIFY) != 0); UpdateUI(hwnd);
                     }
-                    if ((n->modificationType & SC_PERFORMED_UNDO) && activeTabIndex < tabs.size() && tabs[activeTabIndex].hasUndoableBackupLoad && Sci(SCI_GETMODIFY) == 0) {
-                        tabs[activeTabIndex].hasUndoableBackupLoad = false;
-                        Sci(SCI_SETSEL, 0, 0);
-                        Sci(SCI_SETFIRSTVISIBLELINE, 0);
-                        Sci(SCI_SETXOFFSET, 0);
-                    }
                     if (n->linesAdded != 0) {
                         int modLine = Sci(SCI_LINEFROMPOSITION, n->position), total = Sci(SCI_GETLINECOUNT);
                         for (int i = max(0, modLine); i < total; ++i) {
