@@ -113,6 +113,7 @@ RECT GetEolRect(HWND h, HDC hdc, const RECT& rc) {
             else if (!_wcsicmp(e.c_str(), L"js") || !_wcsicmp(e.c_str(), L"ts")) lang = L"JavaScript";
             else if (!_wcsicmp(e.c_str(), L"html") || !_wcsicmp(e.c_str(), L"htm") || !_wcsicmp(e.c_str(), L"xml")) lang = L"HTML";
             else if (!_wcsicmp(e.c_str(), L"json")) lang = L"JSON";
+            else if (!_wcsicmp(e.c_str(), L"md") || !_wcsicmp(e.c_str(), L"markdown")) lang = L"Markdown";
         }
     }
     HFONT oldFont = hSmallFont ? (HFONT)SelectObject(hdc, hSmallFont) : NULL;
@@ -311,9 +312,9 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
     DrawBtn(hdc, { addTabX, pad.top, addTabX + 30, pad.top + 35 }, L"\uE710", hoverElement == HOVER_ADD_TAB, pressedElement == HOVER_ADD_TAB, false, hIconFont, false, false, false);
     
     int btnX = rc.right - pad.right - 135;
-    DrawBtn(hdc, { btnX, pad.top, btnX + 45, pad.top + 35 }, L"\uE921", hoverElement == HOVER_MINIMIZE, pressedElement == HOVER_MINIMIZE, false, hIconFont, false, false, false);
-    DrawBtn(hdc, { btnX + 45, pad.top, btnX + 90, pad.top + 35 }, IsZoomed(h) ? L"\uE923" : L"\uE922", hoverElement == HOVER_MAXIMIZE, pressedElement == HOVER_MAXIMIZE, false, hIconFont, false, false, false);
-    DrawBtn(hdc, { btnX + 90, pad.top, btnX + 135, pad.top + 35 }, L"\uE8BB", hoverElement == HOVER_CLOSE, pressedElement == HOVER_CLOSE, true, hIconFont, false, false, false);
+    DrawBtn(hdc, { btnX, pad.top, btnX + 45, pad.top + 35 }, L"\uE921", hoverElement == HOVER_MINIMIZE, pressedElement == HOVER_MINIMIZE, false, hWindowIconFont, false, false, false);
+    DrawBtn(hdc, { btnX + 45, pad.top, btnX + 90, pad.top + 35 }, IsZoomed(h) ? L"\uE923" : L"\uE922", hoverElement == HOVER_MAXIMIZE, pressedElement == HOVER_MAXIMIZE, false, hWindowIconFont, false, false, false);
+    DrawBtn(hdc, { btnX + 90, pad.top, btnX + 135, pad.top + 35 }, L"\uE8BB", hoverElement == HOVER_CLOSE, pressedElement == HOVER_CLOSE, true, hWindowIconFont, false, false, false);
     if (oldFont) SelectObject(hdc, oldFont);
 }
 
@@ -359,6 +360,7 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
             else if (!_wcsicmp(e.c_str(), L"js") || !_wcsicmp(e.c_str(), L"ts")) lang = L"JavaScript";
             else if (!_wcsicmp(e.c_str(), L"html") || !_wcsicmp(e.c_str(), L"htm") || !_wcsicmp(e.c_str(), L"xml")) lang = L"HTML";
             else if (!_wcsicmp(e.c_str(), L"json")) lang = L"JSON";
+            else if (!_wcsicmp(e.c_str(), L"md") || !_wcsicmp(e.c_str(), L"markdown")) lang = L"Markdown";
         }
     }
     HFONT oldFont = hSmallFont ? (HFONT)SelectObject(hdc, hSmallFont) : NULL;

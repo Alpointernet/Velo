@@ -18,6 +18,7 @@ HWND hwndVScroll = NULL;
 HWND hwndHScroll = NULL;
 HFONT hUIFont = NULL;
 HFONT hIconFont = NULL;
+HFONT hWindowIconFont = NULL;
 HFONT hSmallFont = NULL;
 bool searchVisible = false;
 bool replaceVisible = false;
@@ -280,7 +281,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             hwndMain = hwnd; ApplyDarkMode(hwnd);
             hUIFont = CreateFontW(15, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Inter Medium");
             hIconFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe MDL2 Assets");
-            hSmallFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Inter Light");
+            hWindowIconFont = CreateFontW(10, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe MDL2 Assets");
+            hSmallFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Inter Medium");
             HMODULE hSci = LoadLibraryW(L"SciLexer.dll"); if (!hSci) hSci = LoadLibraryW(L"Scintilla.dll");
             if (!hSci) { ShowCustomMessageBox(hwnd, L"Failed to load Scintilla library", L"Error", MB_OK); return -1; }
             LoadLibraryW(L"lexilla.dll");
@@ -332,7 +334,21 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             if (id == IDM_FILE_NEW) CreateNewTab(hwnd);
             else if (id == IDM_FILE_OPEN) DoFileOpen(hwnd);
-            else if (id == IDM_FILE_SAVE) DoFileSave(hwnd);
+            else if (id == IDM_FILE_SAVE) {
+                int docLen = Sci(SCI_GETLENGTH);
+                std::string dump;
+                for (int i = 0; i < docLen; i++) {
+                    char c = Sci(SCI_GETCHARAT, i);
+                    int style = Sci(SCI_GETSTYLEAT, i);
+                    dump += c;
+                    dump += " (";
+                    dump += std::to_string(style);
+                    dump += ")\n";
+                }
+                std::ofstream out("C:\\Users\\Alpointernet\\.gemini\\antigravity-ide\\brain\\67dc8075-727d-4f1d-8bce-f219f5e6e96b\\scratch\\styles_dump.txt");
+                out << dump;
+                DoFileSave(hwnd);
+            }
             else if (id == IDM_FILE_SAVE_AS) DoFileSaveAs(hwnd);
             else if (id == IDM_FILE_CLOSE_TAB) CloseTab(hwnd, activeTabIndex);
             else if (id == IDM_FILE_EXIT) PostMessage(hwnd, WM_CLOSE, 0, 0);
@@ -481,6 +497,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     if (n->modificationType & (0x01 | 0x02)) { // SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT
                         RecalculateScrollWidth();
                         if (searchVisible) UpdateSearchMatches();
+                        UpdateCustomIndicators(hwndScintilla);
                     }
                     if (activeTabIndex < tabs.size() && tabs[activeTabIndex].isModified != (Sci(SCI_GETMODIFY) != 0)) {
                         tabs[activeTabIndex].isModified = (Sci(SCI_GETMODIFY) != 0); UpdateUI(hwnd);
@@ -520,7 +537,44 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                         Sci(SCI_BEGINUNDOACTION);
                         Sci(SCI_ENDUNDOACTION);
                     }
+                } else if (n->nmhdr.code == SCN_HOTSPOTCLICK || n->nmhdr.code == SCN_INDICATORCLICK) {
+                    int pos = n->position;
+                    int style = Sci(SCI_GETSTYLEAT, pos);
+                    bool isUrl = false;
+                    int startPos = pos;
+                    int endPos = pos;
+                    int docLen = Sci(SCI_GETLENGTH);
+                    
+                    if (Sci(SCI_INDICATORALLONFOR, pos) & (1 << INDICATOR_URL)) {
+                        isUrl = true;
+                        while (startPos > 0 && (Sci(SCI_INDICATORALLONFOR, startPos - 1) & (1 << INDICATOR_URL))) startPos--;
+                        while (endPos < docLen - 1 && (Sci(SCI_INDICATORALLONFOR, endPos + 1) & (1 << INDICATOR_URL))) endPos++;
+                    } else if (style == 18) { // SCE_MARKDOWN_LINK
+                        isUrl = true;
+                        while (startPos > 0 && Sci(SCI_GETSTYLEAT, startPos - 1) == 18) startPos--;
+                        while (endPos < docLen - 1 && Sci(SCI_GETSTYLEAT, endPos + 1) == 18) endPos++;
+                    }
+                    
+                    if (isUrl) {
+                        std::string linkText;
+                        for (int i = startPos; i <= endPos; i++) {
+                            linkText += (char)Sci(SCI_GETCHARAT, i);
+                        }
+                        
+                        size_t parenStart = linkText.rfind('(');
+                        size_t parenEnd = linkText.rfind(')');
+                        if (parenStart != std::string::npos && parenEnd != std::string::npos && parenStart < parenEnd) {
+                            std::string url = linkText.substr(parenStart + 1, parenEnd - parenStart - 1);
+                            ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                        } else {
+                            // Raw URL
+                            ShellExecuteA(NULL, "open", linkText.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                        }
+                    }
                 } else if (n->nmhdr.code == SCN_UPDATEUI) {
+                    if (n->updated & SC_UPDATE_V_SCROLL || n->updated & SC_UPDATE_H_SCROLL) {
+                        UpdateCustomIndicators(hwndScintilla);
+                    }
                     if (searchVisible) UpdateCurrentMatchIndex();
                     UpdateUI(hwnd); SyncLineNumbers(); ShowScrollbars(hwnd);
                 }
@@ -535,6 +589,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_DESTROY: {
             if (hUIFont) DeleteObject(hUIFont);
             if (hIconFont) DeleteObject(hIconFont);
+            if (hWindowIconFont) DeleteObject(hWindowIconFont);
             if (hSmallFont) DeleteObject(hSmallFont);
             PostQuitMessage(0); break;
         }
@@ -575,7 +630,18 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nCmd) {
                 case 'N': CreateNewTab(hwnd); continue;
                 case 'O': DoFileOpen(hwnd); continue;
                 case 'S': DoFileSave(hwnd); continue;
-                case 'W': CloseTab(hwnd, activeTabIndex); continue;
+                case 'W': 
+                    if (shift) {
+                        for (int i = (int)tabs.size() - 1; i >= 0; --i) {
+                            size_t prevSize = tabs.size();
+                            CloseTab(hwnd, i);
+                            if (i > 0 && tabs.size() == prevSize) break;
+                            if (i == 0 && Sci(SCI_GETMODIFY)) break;
+                        }
+                    } else {
+                        CloseTab(hwnd, activeTabIndex);
+                    }
+                    continue;
                 case 'Z': Sci(SCI_UNDO); continue;
                 case 'Y': Sci(SCI_REDO); continue;
                 case 'F': TriggerSearchDialog(hwnd); continue;

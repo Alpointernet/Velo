@@ -20,6 +20,33 @@
 #define SCLEX_PYTHON 2
 #define SCLEX_CPP 3
 #define SCLEX_HTML 4
+#define SCLEX_MARKDOWN 84
+#define SCE_MARKDOWN_DEFAULT 0
+#define SCE_MARKDOWN_LINE_BEGIN 1
+#define SCE_MARKDOWN_STRONG1 2
+#define SCE_MARKDOWN_STRONG2 3
+#define SCE_MARKDOWN_EM1 4
+#define SCE_MARKDOWN_EM2 5
+#define SCE_MARKDOWN_HEADER1 6
+#define SCE_MARKDOWN_HEADER2 7
+#define SCE_MARKDOWN_HEADER3 8
+#define SCE_MARKDOWN_HEADER4 9
+#define SCE_MARKDOWN_HEADER5 10
+#define SCE_MARKDOWN_HEADER6 11
+#define SCE_MARKDOWN_PRECHAR 12
+#define SCE_MARKDOWN_ULIST_ITEM 13
+#define SCE_MARKDOWN_OLIST_ITEM 14
+#define SCE_MARKDOWN_BLOCKQUOTE 15
+#define SCE_MARKDOWN_STRIKEOUT 16
+#define SCE_MARKDOWN_HRULE 17
+#define SCE_MARKDOWN_LINK 18
+#define SCE_MARKDOWN_CODE 19
+#define SCE_MARKDOWN_CODE2 20
+#define SCE_MARKDOWN_CODEBK 21
+
+#define INDICATOR_URL 8
+#define INDICATOR_STRIKE 9
+
 #ifndef SCI_SETLEXER
 #define SCI_SETLEXER 4001
 #endif
@@ -92,7 +119,7 @@ struct PopupMenuItem {
 // Global Variables
 extern HWND hwndMain, hwndScintilla, hwndSearchEdit, hwndReplaceEdit, hwndTabRenameEdit;
 extern HWND hwndVScroll, hwndHScroll;
-extern HFONT hUIFont, hIconFont, hSmallFont;
+extern HFONT hUIFont, hIconFont, hWindowIconFont, hSmallFont;
 extern bool searchVisible, replaceVisible, scrollbarsVisible, vScrollHover, vScrollDrag, hScrollHover, hScrollDrag;
 extern int scrollDragStart, scrollDragStartPos, scrollDragMaxScroll, scrollDragMaxTravel;
 extern int activeLineStart, activeLineEnd;
@@ -133,5 +160,10 @@ RECT GetPad(HWND h);
 // Session Persistence
 void SaveSession();
 void LoadSession(HWND hwndParent);
+
+void SearchNext(HWND hwndScintilla);
+void SearchPrev(HWND hwndScintilla);
+
+void UpdateCustomIndicators(HWND hwndScintilla);
 
 #endif // GLOBALS_H

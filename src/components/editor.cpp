@@ -1,6 +1,8 @@
 #include "../globals.h"
 #include "editor.h"
 #include "ui_drawing.h"
+#include <regex>
+#include <vector>
 
 int GetTotalMarginWidth() {
     if (!hwndScintilla) return 0;
@@ -133,6 +135,8 @@ void ApplySyntax() {
     } else if (!_wcsicmp(ext.c_str(), L"html") || !_wcsicmp(ext.c_str(), L"htm") || !_wcsicmp(ext.c_str(), L"xml")) {
         lang = "hypertext"; lex = SCLEX_HTML;
         kw0 = "html head title body div span a img ul li table tr td th form input button script style link meta header footer nav section article main p h1 h2 h3 h4 h5 h6 br hr";
+    } else if (!_wcsicmp(ext.c_str(), L"md") || !_wcsicmp(ext.c_str(), L"markdown")) {
+        lang = "markdown"; lex = SCLEX_MARKDOWN;
     }
 
     if (lex != SCLEX_NULL) {
@@ -145,13 +149,32 @@ void ApplySyntax() {
     } else Sci(SCI_SETLEXER, SCLEX_NULL);
 
     Sci(SCI_SETPROPERTY, (LPARAM)"styling.within.preprocessor", (LPARAM)"1");
+    Sci(SCI_SETPROPERTY, (LPARAM)"lexer.markdown.header.eolfill", (LPARAM)"1");
     Sci(SCI_SETKEYWORDS, 0, (LPARAM)kw0); Sci(SCI_SETKEYWORDS, 1, (LPARAM)kw1); Sci(SCI_SETKEYWORDS, 3, (LPARAM)kw3);
 
-    for (int i = 0; i <= 32; ++i) {
+    // Set default base styles
+    for (int i = 0; i <= 127; ++i) {
         Sci(SCI_STYLESETBACK, i, 0x2B2521); Sci(SCI_STYLESETFORE, i, 0xD4D4D4);
         Sci(SCI_STYLESETFONT, i, (LPARAM)"JetBrains Mono Medium"); Sci(SCI_STYLESETSIZE, i, editorFontSize);
+        Sci(SCI_STYLESETBOLD, i, FALSE);
+        Sci(SCI_STYLESETITALIC, i, FALSE);
     }
-
+    
+    // Style Line Numbers
+    Sci(SCI_STYLESETBACK, STYLE_LINENUMBER, 0x2B2521); Sci(SCI_STYLESETFORE, STYLE_LINENUMBER, 0x70635C);
+    Sci(SCI_STYLESETFONT, STYLE_LINENUMBER, (LPARAM)"JetBrains Mono Medium"); Sci(SCI_STYLESETSIZE, STYLE_LINENUMBER, editorFontSize - 1);
+    Sci(SCI_STYLESETBACK, 40, 0x2B2521); Sci(SCI_STYLESETFORE, 40, 0xFFFFFF);
+    Sci(SCI_STYLESETFONT, 40, (LPARAM)"JetBrains Mono Medium"); Sci(SCI_STYLESETSIZE, 40, editorFontSize - 1); Sci(SCI_STYLESETBOLD, 40, TRUE);
+    
+    // Setup Custom Indicators
+    Sci(SCI_INDICSETSTYLE, INDICATOR_URL, INDIC_TEXTFORE);
+    Sci(SCI_INDICSETFORE, INDICATOR_URL, 0x55996A);
+    Sci(SCI_INDICSETHOVERSTYLE, INDICATOR_URL, INDIC_PLAIN);
+    Sci(SCI_INDICSETHOVERFORE, INDICATOR_URL, 0x55996A);
+    
+    Sci(SCI_INDICSETSTYLE, INDICATOR_STRIKE, INDIC_STRIKE);
+    Sci(SCI_INDICSETFORE, INDICATOR_STRIKE, 0x808080);
+    
     // Style the indentation guides using the unactive line/row number color (0x70635C)
     Sci(SCI_STYLESETBACK, STYLE_INDENTGUIDE, 0x2B2521);
     Sci(SCI_STYLESETFORE, STYLE_INDENTGUIDE, 0x70635C);
@@ -179,8 +202,65 @@ void ApplySyntax() {
         Sci(SCI_STYLESETFORE, 1, 0xD69C56); Sci(SCI_STYLESETFORE, 3, 0xFEDC9C);
         Sci(SCI_STYLESETFORE, 5, 0xA8CEB5); Sci(SCI_STYLESETFORE, 6, 0x7891CE);
         Sci(SCI_STYLESETFORE, 9, 0x55996A);
+    } else if (lex == SCLEX_MARKDOWN) {
+        Sci(SCI_STYLESETFORE, SCE_MARKDOWN_HEADER1, 0x7891CE); Sci(SCI_STYLESETBOLD, SCE_MARKDOWN_HEADER1, TRUE);
+        Sci(SCI_STYLESETFORE, SCE_MARKDOWN_HEADER2, 0x7891CE); Sci(SCI_STYLESETBOLD, SCE_MARKDOWN_HEADER2, TRUE);
+        Sci(SCI_STYLESETFORE, SCE_MARKDOWN_HEADER3, 0x7891CE); Sci(SCI_STYLESETBOLD, SCE_MARKDOWN_HEADER3, TRUE);
+        Sci(SCI_STYLESETFORE, SCE_MARKDOWN_HEADER4, 0x7891CE); Sci(SCI_STYLESETBOLD, SCE_MARKDOWN_HEADER4, TRUE);
+        Sci(SCI_STYLESETFORE, SCE_MARKDOWN_HEADER5, 0x7891CE); Sci(SCI_STYLESETBOLD, SCE_MARKDOWN_HEADER5, TRUE);
+        Sci(SCI_STYLESETFORE, SCE_MARKDOWN_HEADER6, 0x7891CE); Sci(SCI_STYLESETBOLD, SCE_MARKDOWN_HEADER6, TRUE);
+        Sci(SCI_STYLESETFORE, SCE_MARKDOWN_STRONG1, 0xD69C56); Sci(SCI_STYLESETBOLD, SCE_MARKDOWN_STRONG1, TRUE);
+        Sci(SCI_STYLESETFORE, SCE_MARKDOWN_STRONG2, 0xD69C56); Sci(SCI_STYLESETBOLD, SCE_MARKDOWN_STRONG2, TRUE);
+        Sci(SCI_STYLESETFORE, SCE_MARKDOWN_EM1, 0xA8CEB5); Sci(SCI_STYLESETITALIC, SCE_MARKDOWN_EM1, TRUE);
+        Sci(SCI_STYLESETFORE, SCE_MARKDOWN_EM2, 0xA8CEB5); Sci(SCI_STYLESETITALIC, SCE_MARKDOWN_EM2, TRUE);
+        
+        // Link clicking setup (native lexer links)
+        Sci(SCI_STYLESETHOTSPOT, SCE_MARKDOWN_LINK, TRUE);
+        Sci(SCI_SETHOTSPOTACTIVEFORE, TRUE, 0x55996A);
+        Sci(SCI_SETHOTSPOTACTIVEUNDERLINE, TRUE);
     }
+    
     Sci(SCI_COLOURISE, 0, -1);
+    UpdateCustomIndicators(hwndScintilla);
+}
+
+void UpdateCustomIndicators(HWND hwndScintilla) {
+    if (!hwndScintilla) return;
+    
+    int docLen = Sci(SCI_GETLENGTH);
+    if (docLen <= 0) return;
+    
+    int firstVisibleLine = Sci(SCI_GETFIRSTVISIBLELINE);
+    int linesOnScreen = Sci(SCI_LINESONSCREEN);
+    int startPos = Sci(SCI_POSITIONFROMLINE, firstVisibleLine);
+    int endPos = Sci(SCI_POSITIONFROMLINE, firstVisibleLine + linesOnScreen + 1);
+    if (endPos == -1 || endPos > docLen) endPos = docLen;
+    
+    if (endPos <= startPos) return;
+    
+    std::string text(endPos - startPos + 1, '\0');
+    Sci_TextRange tr;
+    tr.chrg.cpMin = startPos;
+    tr.chrg.cpMax = endPos;
+    tr.lpstrText = &text[0];
+    Sci(SCI_GETTEXTRANGE, 0, (LPARAM)&tr);
+    
+    // Global URLs
+    Sci(SCI_SETINDICATORCURRENT, INDICATOR_URL);
+    Sci(SCI_INDICATORCLEARRANGE, startPos, endPos - startPos);
+    
+    try {
+        std::regex urlRegex("https?://[^\\s\\\"\\'\\<\\>\\[\\]\\(\\)]+");
+        auto words_begin = std::sregex_iterator(text.begin(), text.end(), urlRegex);
+        auto words_end = std::sregex_iterator();
+        
+        for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
+            std::smatch match = *i;
+            int matchStart = startPos + (int)match.position();
+            int matchLength = (int)match.length();
+            Sci(SCI_INDICATORFILLRANGE, matchStart, matchLength);
+        }
+    } catch (...) {}
 }
 
 void StyleScintilla(HWND hwndSci) {
@@ -190,10 +270,7 @@ void StyleScintilla(HWND hwndSci) {
     Sci(SCI_SETMARGINWIDTHN, 1, 0); Sci(SCI_SETMARGINWIDTHN, 2, 0); 
     Sci(SCI_SETENDATLASTLINE, 0);
 
-    Sci(SCI_STYLESETBACK, STYLE_LINENUMBER, 0x2B2521); Sci(SCI_STYLESETFORE, STYLE_LINENUMBER, 0x70635C);
-    Sci(SCI_STYLESETFONT, STYLE_LINENUMBER, (LPARAM)"JetBrains Mono Light"); Sci(SCI_STYLESETSIZE, STYLE_LINENUMBER, editorFontSize - 1);
-    Sci(SCI_STYLESETBACK, 40, 0x2B2521); Sci(SCI_STYLESETFORE, 40, 0xFFFFFF);
-    Sci(SCI_STYLESETFONT, 40, (LPARAM)"JetBrains Mono Medium"); Sci(SCI_STYLESETSIZE, 40, editorFontSize - 1); Sci(SCI_STYLESETBOLD, 40, TRUE);
+
     Sci(SCI_SETCARETFORE, 0xFF8B52); Sci(SCI_SETCARETWIDTH, 2);
     Sci(SCI_SETCARETLINEVISIBLE, TRUE); Sci(SCI_SETCARETLINEBACK, 0x3C312C);
     Sci(SCI_SETCARETLINEVISIBLEALWAYS, TRUE);
