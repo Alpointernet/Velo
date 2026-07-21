@@ -458,7 +458,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     SetWindowPos(hwndSearchEdit, NULL, pad.left + 9, searchY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
                     if (replaceVisible) {
                         int replaceY = pad.top + 70 + (inlineReplace ? 0 : 36) + 10;
-                        int replaceX = pad.left + 9 + (inlineReplace ? 432 : 0);
+                        int replaceX = pad.left + 9 + (inlineReplace ? 422 : 0);
                         SetWindowPos(hwndReplaceEdit, NULL, replaceX, replaceY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
                     } else {
                         ShowWindow(hwndReplaceEdit, SW_HIDE);
