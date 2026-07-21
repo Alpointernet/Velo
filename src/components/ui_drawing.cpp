@@ -20,7 +20,7 @@ RECT GetPad(HWND h) {
 
 void UpdateUI(HWND h) {
     RECT rc; GetClientRect(h, &rc); RECT pad = GetPad(h);
-    bool inlineReplace = (rc.right - pad.right - pad.left > 1150);
+    bool inlineReplace = (rc.right - pad.right - pad.left > 1230);
     int offset = searchVisible ? (replaceVisible ? (inlineReplace ? 36 : 72) : 36) : 0;
     RECT rcTop = { 0, 0, rc.right, pad.top + 70 + EDITOR_TOP_MARGIN + offset }, rcStatus = { 0, rc.bottom - pad.bottom - 24, rc.right, rc.bottom };
     InvalidateRect(h, &rcTop, FALSE); InvalidateRect(h, &rcStatus, FALSE);
@@ -39,7 +39,7 @@ void SyncScrollbars() {
     bool inlineReplace = (pad.left + pad.right > 0 ? (GetSystemMetrics(SM_CXSCREEN) /* approximate, rc.right is not available */) : 0);
     // Wait, GetClientRect(hwndMain, &rcMain) is better.
     RECT rcMain; GetClientRect(hwndMain, &rcMain);
-    bool isInline = (rcMain.right - pad.right - pad.left > 1150);
+    bool isInline = (rcMain.right - pad.right - pad.left > 1230);
     
     int offset = 0;
     if (searchVisible) offset = replaceVisible ? (isInline ? 36 : 72) : 36;
@@ -176,8 +176,8 @@ HoverElement HitTest(HWND h, POINT pt) {
             }
         }
     }
-    if (searchVisible && pt.y >= pad.top + 70 && pt.y < pad.top + 70 + (replaceVisible ? (rc.right - pad.right - pad.left > 1150 ? 36 : 72) : 36)) {
-        bool inlineReplace = (rc.right - pad.right - pad.left > 1150);
+    if (searchVisible && pt.y >= pad.top + 70 && pt.y < pad.top + 70 + (replaceVisible ? (rc.right - pad.right - pad.left > 1230 ? 36 : 72) : 36)) {
+        bool inlineReplace = (rc.right - pad.right - pad.left > 1230);
         int topY = pad.top + 70;
         int relY = pt.y - topY;
         
@@ -189,7 +189,7 @@ HoverElement HitTest(HWND h, POINT pt) {
             if (pt.x >= rc.right - pad.right - 32 && pt.x < rc.right - pad.right - 8 && pt.y >= topY + 6 && pt.y < topY + 30) return HOVER_SEARCH_CLOSE;
             
             if (replaceVisible && inlineReplace) {
-                int repX = pad.left + 430;
+                int repX = pad.left + 420;
                 int btn1X = repX + 342;
                 if (pt.x >= btn1X && pt.x < btn1X + 80 && pt.y >= topY + 6 && pt.y < topY + 30) return HOVER_REPLACE_NEXT;
                 int btn2X = btn1X + 90;
@@ -449,7 +449,7 @@ void TriggerSettingsMenu(HWND h) {
 
 void PaintSearchBar(HWND h, HDC hdc, const RECT& rc) {
     RECT pad = GetPad(h);
-    bool inlineReplace = (rc.right - pad.right - pad.left > 1150);
+    bool inlineReplace = (rc.right - pad.right - pad.left > 1230);
     int topY = pad.top + 70;
     int height = replaceVisible ? (inlineReplace ? 36 : 72) : 36;
     
@@ -509,7 +509,7 @@ void PaintSearchBar(HWND h, HDC hdc, const RECT& rc) {
     
     // Row 2 (Replace)
     if (replaceVisible) {
-        int repX = inlineReplace ? pad.left + 430 : pad.left + 8;
+        int repX = inlineReplace ? pad.left + 420 : pad.left + 8;
         int repY = inlineReplace ? topY : topY + 36;
         
         // Draw Border around Replace Edit Box

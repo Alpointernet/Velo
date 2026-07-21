@@ -420,7 +420,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             int offset = 0;
             if (searchVisible) {
                 PaintSearchBar(hwnd, memDC, rc);
-                bool inlineReplace = (rc.right - pad.right - pad.left > 1150);
+                bool inlineReplace = (rc.right - pad.right - pad.left > 1230);
                 offset = replaceVisible ? (inlineReplace ? 36 : 72) : 36;
             }
             RECT rcTopGap = { pad.left, pad.top + 70 + offset, rc.right - pad.right, pad.top + 70 + offset + EDITOR_TOP_MARGIN };
@@ -444,7 +444,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_SIZE: {
             if (hwndScintilla) {
                 RECT rc; GetClientRect(hwnd, &rc); RECT pad = GetPad(hwnd);
-                bool inlineReplace = (rc.right - pad.right - pad.left > 1150);
+                bool inlineReplace = (rc.right - pad.right - pad.left > 1230);
                 int offset = 0;
                 if (searchVisible) {
                     offset = replaceVisible ? (inlineReplace ? 36 : 72) : 36;
@@ -459,7 +459,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     SetWindowPos(hwndSearchEdit, NULL, pad.left + 9, searchY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
                     if (replaceVisible) {
                         int replaceY = pad.top + 70 + (inlineReplace ? 0 : 36) + 10;
-                        int replaceX = pad.left + 9 + (inlineReplace ? 422 : 0);
+                        int replaceX = pad.left + 9 + (inlineReplace ? 412 : 0);
                         SetWindowPos(hwndReplaceEdit, NULL, replaceX, replaceY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
                     } else {
                         ShowWindow(hwndReplaceEdit, SW_HIDE);
