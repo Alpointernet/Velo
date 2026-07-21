@@ -32,6 +32,7 @@ Most text editors are usually either too simple, or too bloated that you need to
 | `Ctrl+S` | Save current file |
 | `Ctrl+Shift+S` | Save As |
 | `Ctrl+W` | Close active tab |
+| `Ctrl+Shift+W` | Close all tabs |
 | `Ctrl+F` | Open/Close inline find |
 | `Ctrl+Tab` | Next tab |
 | `Ctrl+Shift+Tab` | Previous tab |
