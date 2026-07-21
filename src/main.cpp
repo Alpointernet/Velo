@@ -443,9 +443,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_SIZE: {
             if (hwndScintilla) {
                 RECT rc; GetClientRect(hwnd, &rc); RECT pad = GetPad(hwnd);
+                bool inlineReplace = (rc.right - pad.right - pad.left > 1150);
                 int offset = 0;
                 if (searchVisible) {
-                    offset = replaceVisible ? 72 : 36;
+                    offset = replaceVisible ? (inlineReplace ? 36 : 72) : 36;
                 }
                 int topH = pad.top + 70 + offset + EDITOR_TOP_MARGIN;
                 int ew = rc.right - pad.left - pad.right;
@@ -456,8 +457,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     int searchY = pad.top + 70 + 10;
                     SetWindowPos(hwndSearchEdit, NULL, pad.left + 9, searchY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
                     if (replaceVisible) {
-                        int replaceY = pad.top + 70 + 36 + 10;
-                        SetWindowPos(hwndReplaceEdit, NULL, pad.left + 9, replaceY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
+                        int replaceY = pad.top + 70 + (inlineReplace ? 0 : 36) + 10;
+                        int replaceX = pad.left + 9 + (inlineReplace ? 432 : 0);
+                        SetWindowPos(hwndReplaceEdit, NULL, replaceX, replaceY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
                     } else {
                         ShowWindow(hwndReplaceEdit, SW_HIDE);
                     }
