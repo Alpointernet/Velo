@@ -366,7 +366,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             break;
         }
-        case WM_ERASEBKGND: return 1;
+        case WM_ERASEBKGND: {
+            RECT rc; GetClientRect(hwnd, &rc);
+            HBRUSH br = CreateSolidBrush(0x00181A1F);
+            FillRect((HDC)wParam, &rc, br);
+            DeleteObject(br);
+            return 1;
+        }
         case WM_NCCALCSIZE: {
             if (wParam == TRUE) {
                 NCCALCSIZE_PARAMS* params = (NCCALCSIZE_PARAMS*)lParam;
