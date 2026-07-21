@@ -281,14 +281,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             hUIFont = CreateFontW(15, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Inter Medium");
             hIconFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe MDL2 Assets");
             hSmallFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Inter Light");
-            hwndVScroll = CreateWindowExW(0, L"DarkScrollbar", L"", WS_CHILD | WS_CLIPSIBLINGS, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
-            hwndHScroll = CreateWindowExW(0, L"DarkScrollbar", L"", WS_CHILD | WS_CLIPSIBLINGS, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
-            
-            SetTimer(hwnd, 2, 100, NULL);
-            PostMessageW(hwnd, WM_USER_DEFERRED_INIT, 0, 0);
-            break;
-        }
-        case WM_USER_DEFERRED_INIT: {
             HMODULE hSci = LoadLibraryW(L"SciLexer.dll"); if (!hSci) hSci = LoadLibraryW(L"Scintilla.dll");
             if (!hSci) { ShowCustomMessageBox(hwnd, L"Failed to load Scintilla library", L"Error", MB_OK); return -1; }
             LoadLibraryW(L"lexilla.dll");
@@ -308,9 +300,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             hwndTabRenameEdit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
             if (hwndTabRenameEdit) { SendMessageW(hwndTabRenameEdit, WM_SETFONT, (WPARAM)hUIFont, TRUE); oldTabRenameEditProc = (WNDPROC)SetWindowLongPtrW(hwndTabRenameEdit, GWLP_WNDPROC, (LONG_PTR)TabRenameEditProc); }
             
-            RECT rc; GetClientRect(hwnd, &rc);
-            SendMessage(hwnd, WM_SIZE, 0, MAKELPARAM(rc.right, rc.bottom));
-            UpdateUI(hwnd);
+            hwndVScroll = CreateWindowExW(0, L"DarkScrollbar", L"", WS_CHILD | WS_CLIPSIBLINGS, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
+            hwndHScroll = CreateWindowExW(0, L"DarkScrollbar", L"", WS_CHILD | WS_CLIPSIBLINGS, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
+            
+            SetTimer(hwnd, 2, 100, NULL);
             break;
         }
         case WM_TIMER: {
