@@ -420,7 +420,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             int offset = 0;
             if (searchVisible) {
                 PaintSearchBar(hwnd, memDC, rc);
-                offset = replaceVisible ? 72 : 36;
+                bool inlineReplace = (rc.right - pad.right - pad.left > 1150);
+                offset = replaceVisible ? (inlineReplace ? 36 : 72) : 36;
             }
             RECT rcTopGap = { pad.left, pad.top + 70 + offset, rc.right - pad.right, pad.top + 70 + offset + EDITOR_TOP_MARGIN };
             FillRectColor(memDC, rcTopGap, 0x2B2521);
