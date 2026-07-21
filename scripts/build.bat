@@ -20,7 +20,7 @@ echo Compiling main.cpp...
 echo ========================================
 if not exist "obj" mkdir "obj"
 rc.exe /fo resource.res resource.rc
-cl.exe /EHsc /MD /O2 /nologo /I. /Foobj/ src/*.cpp src/components/*.cpp resource.res user32.lib gdi32.lib shell32.lib dwmapi.lib /link /OUT:Velo.exe
+cl.exe /EHsc /MD /O2 /GL /nologo /I. /Foobj/ src/*.cpp src/components/*.cpp resource.res user32.lib gdi32.lib shell32.lib dwmapi.lib /link /LTCG /OUT:Velo.exe
 if %errorlevel% neq 0 (
     echo Failed to compile Velo.
     pause
