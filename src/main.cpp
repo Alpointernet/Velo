@@ -373,6 +373,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             DeleteObject(br);
             return 1;
         }
+        case WM_NCPAINT: return 0;
         case WM_NCCALCSIZE: {
             if (wParam == TRUE) {
                 NCCALCSIZE_PARAMS* params = (NCCALCSIZE_PARAMS*)lParam;
