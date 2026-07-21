@@ -81,11 +81,8 @@ void ShowScrollbars(HWND h) {
 }
 
 void ApplyDarkMode(HWND hwnd) {
-    int val = 1; 
-    DwmSetWindowAttribute(hwnd, 19, &val, sizeof(val)); // Windows 10
-    DwmSetWindowAttribute(hwnd, 20, &val, sizeof(val)); // Windows 11
-    COLORREF border = 0x00181A1F; // Matches the top bar's 0x1F1A18
-    DwmSetWindowAttribute(hwnd, 34, &border, sizeof(border));
+    int val = 1; DwmSetWindowAttribute(hwnd, 20, &val, sizeof(val));
+    COLORREF border = 0x003C312C; DwmSetWindowAttribute(hwnd, 34, &border, sizeof(border));
     if (HMODULE hUxtheme = LoadLibraryExW(L"uxtheme.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32)) {
         if (auto SetMode = (int(WINAPI*)(int))GetProcAddress(hUxtheme, MAKEINTRESOURCEA(135))) SetMode(1);
         if (auto AllowDark = (bool(WINAPI*)(HWND, bool))GetProcAddress(hUxtheme, MAKEINTRESOURCEA(133))) AllowDark(hwnd, true);
@@ -189,12 +186,16 @@ HoverElement HitTest(HWND h, POINT pt) {
     return HOVER_NONE;
 }
 
-void DrawBtn(HDC hdc, RECT rc, const wchar_t* text, bool hover, bool press, bool isClose, HFONT font, bool disabled, bool toggled, bool elevated) {
+void DrawBtn(HDC hdc, RECT rc, const wchar_t* text, bool hover, bool press, bool isClose, HFONT font, bool disabled, bool toggled, bool elevated, bool noBg) {
     COLORREF textCol = disabled ? 0x443630 : 0xD4D4D4;
     COLORREF bgCol = elevated ? 0x322A26 : 0;
     bool hasBg = elevated;
     if (!disabled) {
-        if (isClose && hover) { bgCol = press ? 0xF1707A : 0xE81123; textCol = 0xFFFFFF; hasBg = true; }
+        if (noBg) {
+            if (hover || press) textCol = 0xFFFFFF;
+            hasBg = false;
+        }
+        else if (isClose && hover) { bgCol = press ? 0x7A70F1 : 0x2311E8; textCol = 0xFFFFFF; hasBg = true; }
         else if (toggled) { bgCol = hover ? 0x51443E : 0x3C312C; textCol = 0xFF8B52; hasBg = true; }
         else if (press) { bgCol = 0x51443E; if (!isClose) textCol = 0xFFFFFF; hasBg = true; }
         else if (hover) { bgCol = 0x3C312C; if (!isClose) textCol = 0xFFFFFF; hasBg = true; }
@@ -260,7 +261,7 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
         if (tabs[i].isModified && !cHover) {
             FillRectColor(hdc, { curX + tabW - 16, pad.top + 14, curX + tabW - 10, pad.top + 20 }, 0xBFB2AB);
         } else {
-            DrawBtn(hdc, rcClose, L"\uE711", cHover, cPress, true, hIconFont, false, false, false);
+            DrawBtn(hdc, rcClose, L"\uE711", cHover, cPress, true, hIconFont, false, false, false, true);
         }
         curX += tabW;
     }

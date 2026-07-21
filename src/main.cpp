@@ -278,14 +278,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         case WM_CREATE: {
             hwndMain = hwnd; ApplyDarkMode(hwnd);
-            
-            // On Windows 11, hide the native 1px colored line by matching our app's dark header color
-            DWORD darkBorder = 0x0021252B; // 0x2B2521 in COLORREF (0x00bbggrr)
-            DwmSetWindowAttribute(hwnd, 34 /*DWMWA_BORDER_COLOR*/, &darkBorder, sizeof(darkBorder));
-            MARGINS margins = { 0, 0, 1, 0 };
-            DwmExtendFrameIntoClientArea(hwnd, &margins);
-            SetWindowPos(hwnd, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED);
-            
             hUIFont = CreateFontW(15, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Inter Medium");
             hIconFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe MDL2 Assets");
             hSmallFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Inter Light");
@@ -293,13 +285,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             if (!hSci) { ShowCustomMessageBox(hwnd, L"Failed to load Scintilla library", L"Error", MB_OK); return -1; }
             LoadLibraryW(L"lexilla.dll");
 
-            hwndScintilla = CreateWindowExW(0, L"Scintilla", L"", WS_CHILD | WS_TABSTOP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
+            hwndScintilla = CreateWindowExW(0, L"Scintilla", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
             if (hwndScintilla) {
                 oldSciProc = (WNDPROC)SetWindowLongPtrW(hwndScintilla, GWLP_WNDPROC, (LONG_PTR)SciSubProc);
                 LoadSession(hwnd);
                 StyleScintilla(hwndScintilla);
                 Sci(SCI_SETTABWIDTH, editorTabWidth);
-                ShowWindow(hwndScintilla, SW_SHOW);
             }
             hwndSearchEdit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | ES_AUTOHSCROLL, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
             if (hwndSearchEdit) { SendMessageW(hwndSearchEdit, WM_SETFONT, (WPARAM)hUIFont, TRUE); SendMessageW(hwndSearchEdit, 0x1501, TRUE, (LPARAM)L"Search..."); oldSearchEditProc = (WNDPROC)SetWindowLongPtrW(hwndSearchEdit, GWLP_WNDPROC, (LONG_PTR)SearchEditProc); }
@@ -369,27 +360,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             break;
         }
-        case WM_ERASEBKGND: {
-            RECT rc; GetClientRect(hwnd, &rc);
-            HBRUSH br = CreateSolidBrush(0x00181A1F);
-            FillRect((HDC)wParam, &rc, br);
-            DeleteObject(br);
-            return 1;
-        }
-        case WM_NCCALCSIZE: {
-            if (wParam == TRUE) return 0;
-            return DefWindowProcW(hwnd, msg, wParam, lParam);
-        }
+        case WM_ERASEBKGND: return 1;
+        case WM_NCCALCSIZE: return 0;
         case WM_NCHITTEST: {
-            POINT pt = { (int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam) };
-            LRESULT hit = DefWindowProcW(hwnd, msg, wParam, lParam);
-            if (hit != HTCLIENT) return hit;
-            
-            ScreenToClient(hwnd, &pt);
+            POINT pt = { (int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam) }; ScreenToClient(hwnd, &pt);
             RECT rc; GetClientRect(hwnd, &rc);
             if (!IsZoomed(hwnd)) {
-                int bs = 8;
-                bool l = pt.x < bs, r = pt.x >= rc.right - bs, t = pt.y < bs, b = pt.y >= rc.bottom - bs;
+                int bs = 6; bool l = pt.x < bs, r = pt.x > rc.right - bs, t = pt.y < bs, b = pt.y > rc.bottom - bs;
                 if (t && l) return HTTOPLEFT; if (t && r) return HTTOPRIGHT; if (b && l) return HTBOTTOMLEFT; if (b && r) return HTBOTTOMRIGHT;
                 if (l) return HTLEFT; if (r) return HTRIGHT; if (t) return HTTOP; if (b) return HTBOTTOM;
             }
@@ -453,8 +430,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             if (pad.right > 1) FillRectColor(memDC, { rc.right - pad.right, pad.top + 70 + offset, rc.right, rc.bottom - pad.bottom - 24 }, 0x2B2521);
             if (pad.bottom > 1) FillRectColor(memDC, { 0, rc.bottom - pad.bottom, rc.right, rc.bottom }, 0x1F1A18);
             
-            // The native DWM shadow provides the contrast boundary.
-            // No custom 1-pixel borders are needed.
+            FillRectColor(memDC, { 0, 0, rc.right, 1 }, 0x3C312C);
+            if (!IsZoomed(hwnd)) {
+                FillRectColor(memDC, { 0, rc.bottom - 1, rc.right, rc.bottom }, 0x3C312C); 
+                FillRectColor(memDC, { 0, 0, 1, rc.bottom }, 0x3C312C);              
+                FillRectColor(memDC, { rc.right - 1, 0, rc.right, rc.bottom }, 0x3C312C); 
+            }
             
             BitBlt(hdc, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left, ps.rcPaint.bottom - ps.rcPaint.top, memDC, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
             SelectObject(memDC, oldBmp); DeleteObject(memBmp); DeleteDC(memDC); EndPaint(hwnd, &ps); return 0;
@@ -545,7 +526,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         case WM_CLOSE: {
             SaveSession();
-            ShowWindow(hwnd, SW_HIDE);
             DestroyWindow(hwnd);
             return 0;
         }
@@ -563,7 +543,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nCmd) {
     SetProcessDPIAware();
     LoadFonts();
-    WNDCLASSW wc = { CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW, WndProc, 0, 0, hInst, LoadIconW(hInst, MAKEINTRESOURCEW(1)), LoadCursorW(NULL, (LPCWSTR)IDC_ARROW), CreateSolidBrush(0x00181A1F), NULL, L"VeloClass" };
+    WNDCLASSW wc = { CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW, WndProc, 0, 0, hInst, LoadIconW(hInst, MAKEINTRESOURCEW(1)), LoadCursorW(NULL, (LPCWSTR)IDC_ARROW), NULL, NULL, L"VeloClass" };
     RegisterClassW(&wc);
     WNDCLASSW wcSb = { 0, ScrollbarProc, 0, 0, hInst, NULL, LoadCursorW(NULL, (LPCWSTR)IDC_ARROW), NULL, NULL, L"DarkScrollbar" };
     RegisterClassW(&wcSb);
