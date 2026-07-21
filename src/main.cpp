@@ -278,9 +278,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         case WM_CREATE: {
             hwndMain = hwnd; ApplyDarkMode(hwnd);
-            MARGINS margins = { 1, 1, 1, 1 };
-            DwmExtendFrameIntoClientArea(hwnd, &margins);
-            SetWindowPos(hwnd, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED);
+            
+            // On Windows 11, hide the native 1px colored line by matching our app's dark header color
+            DWORD darkBorder = 0x0021252B; // 0x2B2521 in COLORREF (0x00bbggrr)
+            DwmSetWindowAttribute(hwnd, 34 /*DWMWA_BORDER_COLOR*/, &darkBorder, sizeof(darkBorder));
             
             hUIFont = CreateFontW(15, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Inter Medium");
             hIconFont = CreateFontW(13, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe MDL2 Assets");
@@ -365,16 +366,30 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             break;
         }
         case WM_ERASEBKGND: return 1;
-        case WM_NCCALCSIZE: return 0;
+        case WM_NCCALCSIZE: {
+            if (wParam == TRUE) {
+                NCCALCSIZE_PARAMS* params = (NCCALCSIZE_PARAMS*)lParam;
+                DefWindowProcW(hwnd, msg, wParam, lParam);
+                int titleBarHeight = GetSystemMetrics(SM_CYCAPTION) + GetSystemMetrics(SM_CYSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+                params->rgrc[0].top -= titleBarHeight;
+                return 0;
+            }
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
+        }
         case WM_NCHITTEST: {
-            POINT pt = { (int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam) }; ScreenToClient(hwnd, &pt);
+            POINT pt = { (int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam) };
+            LRESULT hit = DefWindowProcW(hwnd, msg, wParam, lParam);
+            if (hit == HTLEFT || hit == HTRIGHT || hit == HTBOTTOM || hit == HTBOTTOMLEFT || hit == HTBOTTOMRIGHT) return hit;
+            
+            ScreenToClient(hwnd, &pt);
             RECT rc; GetClientRect(hwnd, &rc);
             if (!IsZoomed(hwnd)) {
                 int bs = GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-                if (bs < 8) bs = 8;
-                bool l = pt.x < bs, r = pt.x > rc.right - bs, t = pt.y < bs, b = pt.y > rc.bottom - bs;
-                if (t && l) return HTTOPLEFT; if (t && r) return HTTOPRIGHT; if (b && l) return HTBOTTOMLEFT; if (b && r) return HTBOTTOMRIGHT;
-                if (l) return HTLEFT; if (r) return HTRIGHT; if (t) return HTTOP; if (b) return HTBOTTOM;
+                if (pt.y < bs) {
+                    if (pt.x < bs) return HTTOPLEFT;
+                    if (pt.x > rc.right - bs) return HTTOPRIGHT;
+                    return HTTOP;
+                }
             }
             RECT pad = GetPad(hwnd);
             return (pt.y >= pad.top && pt.y < pad.top + 35 && HitTest(hwnd, pt) == HOVER_NONE) ? HTCAPTION : HTCLIENT;
