@@ -84,7 +84,8 @@ void ApplyDarkMode(HWND hwnd) {
     int val = 1; 
     DwmSetWindowAttribute(hwnd, 19, &val, sizeof(val)); // Windows 10
     DwmSetWindowAttribute(hwnd, 20, &val, sizeof(val)); // Windows 11
-    COLORREF border = 0x003C312C; DwmSetWindowAttribute(hwnd, 34, &border, sizeof(border));
+    COLORREF border = 0x00181A1F; // Matches the top bar's 0x1F1A18
+    DwmSetWindowAttribute(hwnd, 34, &border, sizeof(border));
     if (HMODULE hUxtheme = LoadLibraryExW(L"uxtheme.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32)) {
         if (auto SetMode = (int(WINAPI*)(int))GetProcAddress(hUxtheme, MAKEINTRESOURCEA(135))) SetMode(1);
         if (auto AllowDark = (bool(WINAPI*)(HWND, bool))GetProcAddress(hUxtheme, MAKEINTRESOURCEA(133))) AllowDark(hwnd, true);

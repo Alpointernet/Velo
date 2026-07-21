@@ -453,12 +453,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             if (pad.right > 1) FillRectColor(memDC, { rc.right - pad.right, pad.top + 70 + offset, rc.right, rc.bottom - pad.bottom - 24 }, 0x2B2521);
             if (pad.bottom > 1) FillRectColor(memDC, { 0, rc.bottom - pad.bottom, rc.right, rc.bottom }, 0x1F1A18);
             
-            FillRectColor(memDC, { 0, 0, rc.right, 1 }, 0x3C312C);
-            if (!IsZoomed(hwnd)) {
-                FillRectColor(memDC, { 0, rc.bottom - 1, rc.right, rc.bottom }, 0x3C312C); 
-                FillRectColor(memDC, { 0, 0, 1, rc.bottom }, 0x3C312C);              
-                FillRectColor(memDC, { rc.right - 1, 0, rc.right, rc.bottom }, 0x3C312C); 
-            }
+            // The native DWM shadow provides the contrast boundary.
+            // No custom 1-pixel borders are needed.
             
             BitBlt(hdc, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left, ps.rcPaint.bottom - ps.rcPaint.top, memDC, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
             SelectObject(memDC, oldBmp); DeleteObject(memBmp); DeleteDC(memDC); EndPaint(hwnd, &ps); return 0;
