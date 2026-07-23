@@ -403,13 +403,40 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             HoverElement newHover = HitTest(hwnd, pt);
             
             if (GetCapture() == hwnd && pressedElement >= HOVER_TAB_BASE && pressedElement < HOVER_TAB_CLOSE_BASE) {
-                if (newHover >= HOVER_TAB_BASE && newHover < HOVER_TAB_CLOSE_BASE && newHover != pressedElement) {
-                    int oldIdx = pressedElement - HOVER_TAB_BASE;
-                    int newIdx = newHover - HOVER_TAB_BASE;
-                    std::swap(tabs[oldIdx], tabs[newIdx]);
-                    if (activeTabIndex == (size_t)oldIdx) activeTabIndex = newIdx;
-                    else if (activeTabIndex == (size_t)newIdx) activeTabIndex = oldIdx;
-                    pressedElement = newHover;
+                int dragIdx = pressedElement - HOVER_TAB_BASE;
+                int dragW = GetTabWidth(dragIdx);
+                int dragVisualLeft = pt.x - dragGrabOffset;
+                int dragCenter = dragVisualLeft + dragW / 2;
+                
+                // Compute tab positions
+                RECT rc2; GetClientRect(hwnd, &rc2); RECT pad2 = GetPad(hwnd);
+                int sx = pad2.left + 70, cx = sx;
+                // Find the logical left edge of the dragged tab's current slot
+                for (int t = 0; t < dragIdx; ++t) cx += GetTabWidth(t);
+                
+                // Check swap with right neighbor
+                if (dragIdx + 1 < (int)tabs.size()) {
+                    int rightLeft = cx + dragW;
+                    int rightW = GetTabWidth(dragIdx + 1);
+                    int rightMid = rightLeft + rightW / 2;
+                    if (dragCenter > rightMid) {
+                        std::swap(tabs[dragIdx], tabs[dragIdx + 1]);
+                        if (activeTabIndex == (size_t)dragIdx) activeTabIndex = dragIdx + 1;
+                        else if (activeTabIndex == (size_t)(dragIdx + 1)) activeTabIndex = dragIdx;
+                        pressedElement = (HoverElement)(HOVER_TAB_BASE + dragIdx + 1);
+                    }
+                }
+                // Check swap with left neighbor
+                if (dragIdx > 0) {
+                    int leftW = GetTabWidth(dragIdx - 1);
+                    int leftLeft = cx - leftW;
+                    int leftMid = leftLeft + leftW / 2;
+                    if (dragCenter < leftMid) {
+                        std::swap(tabs[dragIdx], tabs[dragIdx - 1]);
+                        if (activeTabIndex == (size_t)dragIdx) activeTabIndex = dragIdx - 1;
+                        else if (activeTabIndex == (size_t)(dragIdx - 1)) activeTabIndex = dragIdx;
+                        pressedElement = (HoverElement)(HOVER_TAB_BASE + dragIdx - 1);
+                    }
                 }
                 UpdateUI(hwnd);
             }
