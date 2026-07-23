@@ -25,29 +25,29 @@ LRESULT CALLBACK CustomDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
             GetClientRect(hwnd, &rc);
             
             // Draw background
-            FillRectColor(hdc, rc, 0x1F1A18);
+            FillRectColor(hdc, rc, theme.popupBg);
             
             // Draw border
-            HBRUSH hBrBrd = CreateSolidBrush(0x3C312C);
+            HBRUSH hBrBrd = CreateSolidBrush(theme.popupBorder);
             FrameRect(hdc, &rc, hBrBrd);
             DeleteObject(hBrBrd);
             
             // Top accent line (orange, 3px height)
             RECT rcAccent = { 0, 0, rc.right, 3 };
-            HBRUSH hBrAcc = CreateSolidBrush(0xFF8B52);
+            HBRUSH hBrAcc = CreateSolidBrush(theme.popupAccent);
             FillRect(hdc, &rcAccent, hBrAcc);
             DeleteObject(hBrAcc);
             
             // Draw title text
             RECT rcTitle = { 20, 15, rc.right - 20, 40 };
             SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, 0xFFFFFF); // White
+            SetTextColor(hdc, theme.popupTextActive);
             HFONT oldFont = (HFONT)SelectObject(hdc, hUIFont ? hUIFont : (HFONT)GetStockObject(DEFAULT_GUI_FONT));
             DrawTextW(hdc, data->title.c_str(), -1, &rcTitle, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
             
             // Draw message body
             RECT rcText = { 20, 50, rc.right - 20, rc.bottom - 60 };
-            SetTextColor(hdc, 0xBFB2AB); // Light gray/brown text
+            SetTextColor(hdc, theme.popupText);
             SelectObject(hdc, hSmallFont ? hSmallFont : (HFONT)GetStockObject(DEFAULT_GUI_FONT));
             DrawTextW(hdc, data->message.c_str(), -1, &rcText, DT_WORDBREAK | DT_LEFT);
             
@@ -58,21 +58,21 @@ LRESULT CALLBACK CustomDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
                 bool hover = (data->hoveredButtonIndex == i);
                 bool press = (data->pressedButtonIndex == i);
                 
-                COLORREF bgCol = 0x2B2521; // Dark default button bg
-                COLORREF borderCol = 0x3C312C;
-                COLORREF textCol = 0xBFB2AB;
+                COLORREF bgCol = theme.popupButtonBg;
+                COLORREF borderCol = theme.popupBorder;
+                COLORREF textCol = theme.popupText;
                 
                 if (press) {
-                    bgCol = 0x51443E;
-                    textCol = 0xFFFFFF;
+                    bgCol = theme.popupHoverBg;
+                    textCol = theme.popupTextActive;
                 } else if (hover) {
-                    bgCol = 0x3C312C;
-                    textCol = 0xFFFFFF;
+                    bgCol = theme.popupHoverBg;
+                    textCol = theme.popupTextActive;
                 }
                 
                 // Highlight the primary button (index 0, e.g. "Yes" or "OK") with our theme accent color
                 if (i == 0 && !hover && !press) {
-                    borderCol = 0xFF8B52; // Orange accent border
+                    borderCol = theme.popupAccent;
                 }
                 
                 FillRectColor(hdc, btn.rect, bgCol);
@@ -311,16 +311,16 @@ LRESULT CALLBACK CustomPopupProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, memBmp);
             
             // Draw background
-            FillRectColor(memDC, rc, 0x1F1A18);
+            FillRectColor(memDC, rc, theme.popupBg);
             
             // Draw border
-            HBRUSH hBrBrd = CreateSolidBrush(0x3C312C);
+            HBRUSH hBrBrd = CreateSolidBrush(theme.popupBorder);
             FrameRect(memDC, &rc, hBrBrd);
             DeleteObject(hBrBrd);
             
             // Top accent line (orange, 2px height)
             RECT rcAccent = { 0, 0, rc.right, 2 };
-            HBRUSH hBrAcc = CreateSolidBrush(0xFF8B52);
+            HBRUSH hBrAcc = CreateSolidBrush(theme.popupAccent);
             FillRect(memDC, &rcAccent, hBrAcc);
             DeleteObject(hBrAcc);
             
@@ -332,33 +332,33 @@ LRESULT CALLBACK CustomPopupProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
                 const auto& item = data->items[i];
                 if (item.isSeparator) {
                     RECT rcSepLine = { 10, yOffset + 3, rc.right - 10, yOffset + 4 };
-                    FillRectColor(memDC, rcSepLine, 0x3C312C);
+                    FillRectColor(memDC, rcSepLine, theme.popupBorder);
                     yOffset += 8;
                 } else {
                     RECT rcItem = { 1, yOffset, rc.right - 1, yOffset + 28 };
                     bool hover = (data->hoveredIndex == i);
                     
                     if (hover) {
-                        FillRectColor(memDC, rcItem, 0x2B2521); // Hover bg matches theme
+                        FillRectColor(memDC, rcItem, theme.popupHoverBg);
                     }
                     
                     // Draw checked indicator (orange square)
                     if (item.isChecked) {
                         RECT rcCheck = { 12, yOffset + 10, 20, yOffset + 18 };
-                        HBRUSH hBrChk = CreateSolidBrush(0xFF8B52);
+                        HBRUSH hBrChk = CreateSolidBrush(theme.popupAccent);
                         FillRect(memDC, &rcCheck, hBrChk);
                         DeleteObject(hBrChk);
                     }
                     
                     // Draw label text
                     RECT rcText = { 32, yOffset, rc.right - 80, yOffset + 28 };
-                    SetTextColor(memDC, hover ? 0xFFFFFF : 0xBFB2AB);
+                    SetTextColor(memDC, hover ? theme.popupTextActive : theme.popupText);
                     DrawTextW(memDC, item.label.c_str(), -1, &rcText, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
                     
                     // Draw shortcut text
                     if (!item.shortcut.empty()) {
                         RECT rcShortcut = { rc.right - 90, yOffset, rc.right - 15, yOffset + 28 };
-                        SetTextColor(memDC, hover ? 0xBFB2AB : 0x6E5E56);
+                        SetTextColor(memDC, hover ? theme.popupText : theme.textDim);
                         DrawTextW(memDC, item.shortcut.c_str(), -1, &rcShortcut, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
                     }
                     
@@ -547,29 +547,29 @@ LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, memBmp);
             
             // Background
-            FillRectColor(memDC, rc, 0x1F1A18);
+            FillRectColor(memDC, rc, theme.popupBg);
             
             // Border
-            HBRUSH hBrBrd = CreateSolidBrush(0x3C312C);
+            HBRUSH hBrBrd = CreateSolidBrush(theme.popupBorder);
             FrameRect(memDC, &rc, hBrBrd);
             DeleteObject(hBrBrd);
             
             // Top Accent Orange Strip
             RECT rcAccent = { 0, 0, rc.right, 3 };
-            HBRUSH hBrAcc = CreateSolidBrush(0xFF8B52);
+            HBRUSH hBrAcc = CreateSolidBrush(theme.popupAccent);
             FillRect(memDC, &rcAccent, hBrAcc);
             DeleteObject(hBrAcc);
             
             // Title
             RECT rcTitle = { 20, 15, rc.right - 20, 40 };
             SetBkMode(memDC, TRANSPARENT);
-            SetTextColor(memDC, 0xFFFFFF);
+            SetTextColor(memDC, theme.popupTextActive);
             HFONT oldFont = (HFONT)SelectObject(memDC, hUIFont ? hUIFont : (HFONT)GetStockObject(DEFAULT_GUI_FONT));
             DrawTextW(memDC, L"Settings", -1, &rcTitle, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
             
             // Labels
             SelectObject(memDC, hSmallFont ? hSmallFont : (HFONT)GetStockObject(DEFAULT_GUI_FONT));
-            SetTextColor(memDC, 0xBFB2AB);
+            SetTextColor(memDC, theme.popupText);
             
             RECT rcLblBraces = { 20, 60, 200, 90 };
             DrawTextW(memDC, L"Auto-Close Braces", -1, &rcLblBraces, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
@@ -604,16 +604,16 @@ LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 else if (btn.settingType == 4 && btn.value == (data->tempCaretStyleBlock ? 1 : 0)) active = true;
                 else if (btn.settingType == 5 && btn.value == (data->tempShowTopBar ? 1 : 0)) active = true;
                 
-                COLORREF bgCol = 0x2B2521;
-                COLORREF borderCol = active ? 0xFF8B52 : 0x3C312C;
-                COLORREF textCol = active ? 0xFFFFFF : 0xBFB2AB;
+                COLORREF bgCol = theme.popupButtonBg;
+                COLORREF borderCol = active ? theme.popupAccent : theme.popupBorder;
+                COLORREF textCol = active ? theme.popupTextActive : theme.popupText;
                 
                 if (press) {
-                    bgCol = 0x51443E;
-                    textCol = 0xFFFFFF;
+                    bgCol = theme.popupHoverBg;
+                    textCol = theme.popupTextActive;
                 } else if (hover) {
-                    bgCol = 0x3C312C;
-                    textCol = 0xFFFFFF;
+                    bgCol = theme.popupHoverBg;
+                    textCol = theme.popupTextActive;
                 }
                 
                 FillRectColor(memDC, btn.rect, bgCol);

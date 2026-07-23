@@ -79,6 +79,14 @@ void SaveDefaultTheme() {
     out << "  \"closeHover\": \"#e81123\",\n";
     out << "  \"closePress\": \"#c42b1c\",\n\n";
     
+    out << "  \"popupBg\": \"#181a1f\",\n";
+    out << "  \"popupBorder\": \"#2c313c\",\n";
+    out << "  \"popupAccent\": \"#569cd6\",\n";
+    out << "  \"popupText\": \"#abb2bf\",\n";
+    out << "  \"popupTextActive\": \"#ffffff\",\n";
+    out << "  \"popupHoverBg\": \"#2c313c\",\n";
+    out << "  \"popupButtonBg\": \"#21252b\",\n\n";
+    
     out << "  \"editorBg\": \"#21252b\",\n";
     out << "  \"editorFg\": \"#d4d4d4\",\n";
     out << "  \"editorLineNumberFg\": \"#495162\",\n";
@@ -113,6 +121,14 @@ void SetDefaultThemeValues() {
     
     theme.closeHover = RGB(0xe8, 0x11, 0x23);
     theme.closePress = RGB(0xc4, 0x2b, 0x1c);
+    
+    theme.popupBg = RGB(0x18, 0x1a, 0x1f);
+    theme.popupBorder = RGB(0x2c, 0x31, 0x3c);
+    theme.popupAccent = RGB(0x56, 0x9c, 0xd6);
+    theme.popupText = RGB(0xab, 0xb2, 0xbf);
+    theme.popupTextActive = RGB(0xff, 0xff, 0xff);
+    theme.popupHoverBg = RGB(0x2c, 0x31, 0x3c);
+    theme.popupButtonBg = RGB(0x21, 0x25, 0x2b);
     
     theme.editorBg = RGB(0x21, 0x25, 0x2b);
     theme.editorFg = RGB(0xd4, 0xd4, 0xd4);
@@ -174,6 +190,14 @@ bool LoadTheme() {
     
     theme.closeHover = ParseHexColor(ExtractJsonString(json, "closeHover"), theme.closeHover);
     theme.closePress = ParseHexColor(ExtractJsonString(json, "closePress"), theme.closePress);
+    
+    theme.popupBg = ParseHexColor(ExtractJsonString(json, "popupBg"), theme.popupBg);
+    theme.popupBorder = ParseHexColor(ExtractJsonString(json, "popupBorder"), theme.popupBorder);
+    theme.popupAccent = ParseHexColor(ExtractJsonString(json, "popupAccent"), theme.popupAccent);
+    theme.popupText = ParseHexColor(ExtractJsonString(json, "popupText"), theme.popupText);
+    theme.popupTextActive = ParseHexColor(ExtractJsonString(json, "popupTextActive"), theme.popupTextActive);
+    theme.popupHoverBg = ParseHexColor(ExtractJsonString(json, "popupHoverBg"), theme.popupHoverBg);
+    theme.popupButtonBg = ParseHexColor(ExtractJsonString(json, "popupButtonBg"), theme.popupButtonBg);
     
     theme.editorBg = ParseHexColor(ExtractJsonString(json, "editorBg"), theme.editorBg);
     theme.editorFg = ParseHexColor(ExtractJsonString(json, "editorFg"), theme.editorFg);

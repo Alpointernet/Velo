@@ -20,6 +20,15 @@ struct Theme {
     COLORREF closeHover;
     COLORREF closePress;
     
+    // Popup colors
+    COLORREF popupBg;
+    COLORREF popupBorder;
+    COLORREF popupAccent;
+    COLORREF popupText;
+    COLORREF popupTextActive;
+    COLORREF popupHoverBg;
+    COLORREF popupButtonBg;
+    
     // Editor specific colors
     COLORREF editorBg;
     COLORREF editorFg;
