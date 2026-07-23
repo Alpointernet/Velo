@@ -406,7 +406,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 int dragIdx = pressedElement - HOVER_TAB_BASE;
                 int dragW = GetTabWidth(dragIdx);
                 int dragVisualLeft = pt.x - dragGrabOffset;
-                int dragCenter = dragVisualLeft + dragW / 2;
+                int dragVisualRight = dragVisualLeft + dragW;
                 
                 // Compute tab positions
                 RECT rc2; GetClientRect(hwnd, &rc2); RECT pad2 = GetPad(hwnd);
@@ -414,24 +414,24 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 // Find the logical left edge of the dragged tab's current slot
                 for (int t = 0; t < dragIdx; ++t) cx += GetTabWidth(t);
                 
-                // Check swap with right neighbor
+                // Check swap with right neighbor: trigger when dragged tab's right edge passes neighbor's center
                 if (dragIdx + 1 < (int)tabs.size()) {
                     int rightLeft = cx + dragW;
                     int rightW = GetTabWidth(dragIdx + 1);
                     int rightMid = rightLeft + rightW / 2;
-                    if (dragCenter > rightMid) {
+                    if (dragVisualRight > rightMid) {
                         std::swap(tabs[dragIdx], tabs[dragIdx + 1]);
                         if (activeTabIndex == (size_t)dragIdx) activeTabIndex = dragIdx + 1;
                         else if (activeTabIndex == (size_t)(dragIdx + 1)) activeTabIndex = dragIdx;
                         pressedElement = (HoverElement)(HOVER_TAB_BASE + dragIdx + 1);
                     }
                 }
-                // Check swap with left neighbor
+                // Check swap with left neighbor: trigger when dragged tab's left edge passes neighbor's center
                 if (dragIdx > 0) {
                     int leftW = GetTabWidth(dragIdx - 1);
                     int leftLeft = cx - leftW;
                     int leftMid = leftLeft + leftW / 2;
-                    if (dragCenter < leftMid) {
+                    if (dragVisualLeft < leftMid) {
                         std::swap(tabs[dragIdx], tabs[dragIdx - 1]);
                         if (activeTabIndex == (size_t)dragIdx) activeTabIndex = dragIdx - 1;
                         else if (activeTabIndex == (size_t)(dragIdx - 1)) activeTabIndex = dragIdx;
