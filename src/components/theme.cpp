@@ -81,7 +81,7 @@ void SaveDefaultTheme() {
     
     out << "  \"popupBg\": \"#181a1f\",\n";
     out << "  \"popupBorder\": \"#2c313c\",\n";
-    out << "  \"popupAccent\": \"#569cd6\",\n";
+    out << "  \"popupAccent\": \"#528bff\",\n";
     out << "  \"popupText\": \"#abb2bf\",\n";
     out << "  \"popupTextActive\": \"#ffffff\",\n";
     out << "  \"popupHoverBg\": \"#2c313c\",\n";
@@ -124,7 +124,7 @@ void SetDefaultThemeValues() {
     
     theme.popupBg = RGB(0x18, 0x1a, 0x1f);
     theme.popupBorder = RGB(0x2c, 0x31, 0x3c);
-    theme.popupAccent = RGB(0x56, 0x9c, 0xd6);
+    theme.popupAccent = RGB(0x52, 0x8b, 0xff);
     theme.popupText = RGB(0xab, 0xb2, 0xbf);
     theme.popupTextActive = RGB(0xff, 0xff, 0xff);
     theme.popupHoverBg = RGB(0x2c, 0x31, 0x3c);
