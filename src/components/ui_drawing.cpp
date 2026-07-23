@@ -438,7 +438,6 @@ void TriggerSettingsMenu(HWND h) {
         { L"", 0, true, false, L"" },
         { L"Word Wrap", IDM_TOGGLE_WRAP, false, Sci(SCI_GETWRAPMODE) != SC_WRAP_NONE, L"" },
         { L"Line Numbers", IDM_TOGGLE_LINES, false, Sci(SCI_GETMARGINWIDTHN, 0) > 0, L"" },
-        { L"File Top Bar", IDM_TOGGLE_TOPBAR, false, showTopBar, L"" },
         { L"", 0, true, false, L"" },
         { L"Settings...", IDM_SETTINGS_DIALOG, false, false, L"" },
         { L"", 0, true, false, L"" },
