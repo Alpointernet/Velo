@@ -130,6 +130,7 @@ extern int activeLineStart, activeLineEnd;
 extern std::vector<Tab> tabs;
 extern size_t activeTabIndex;
 extern HoverElement hoverElement, pressedElement;
+extern int dragStartX;
 extern WNDPROC oldSearchEditProc, oldReplaceEditProc;
 extern WNDPROC oldSciProc;
 

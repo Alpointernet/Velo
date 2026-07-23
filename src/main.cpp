@@ -37,6 +37,7 @@ std::vector<Tab> tabs;
 size_t activeTabIndex = 0;
 HoverElement hoverElement = HOVER_NONE;
 HoverElement pressedElement = HOVER_NONE;
+int dragStartX = 0;
 WNDPROC oldSearchEditProc = NULL;
 WNDPROC oldReplaceEditProc = NULL;
 WNDPROC oldSciProc = NULL;
@@ -408,6 +409,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     std::swap(tabs[oldIdx], tabs[newIdx]);
                     if (activeTabIndex == (size_t)oldIdx) activeTabIndex = newIdx;
                     else if (activeTabIndex == (size_t)newIdx) activeTabIndex = oldIdx;
+                    if (newIdx > oldIdx) dragStartX += GetTabWidth(oldIdx); // oldIdx has the swapped tab
+                    else dragStartX -= GetTabWidth(oldIdx);
                     pressedElement = newHover;
                     UpdateUI(hwnd);
                 }
@@ -419,6 +422,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_MOUSELEAVE: { hoverElement = HOVER_NONE; UpdateUI(hwnd); break; }
         case WM_LBUTTONDOWN: {
             POINT pt = { (int)(short)LOWORD(lParam), (short)HIWORD(lParam) }; pressedElement = HitTest(hwnd, pt);
+            if (pressedElement >= HOVER_TAB_BASE && pressedElement < HOVER_TAB_CLOSE_BASE) dragStartX = pt.x;
             UpdateUI(hwnd); SetCapture(hwnd); break;
         }
         case WM_LBUTTONDBLCLK: {

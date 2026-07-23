@@ -257,36 +257,59 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
     
     int curX = startX; HFONT oldFont = hUIFont ? (HFONT)SelectObject(hdc, hUIFont) : NULL;
     int activeTabLeft = 0, activeTabRight = 0;
-    for (size_t i = 0; i < tabs.size(); ++i) {
+    int draggedIdx = -1;
+    if (GetCapture() == h && pressedElement >= HOVER_TAB_BASE && pressedElement < HOVER_TAB_CLOSE_BASE) {
+        draggedIdx = pressedElement - HOVER_TAB_BASE;
+    }
+    int draggedLogicalX = 0;
+
+    auto drawTab = [&](size_t i, int drawX, bool isDragged) {
         int tabW = GetTabWidth(i);
         bool active = (i == activeTabIndex), hover = (hoverElement == HOVER_TAB_BASE + i || hoverElement == HOVER_TAB_CLOSE_BASE + i);
+        if (isDragged) hover = true;
         
-        FillRectColor(hdc, { curX, pad.top, curX + tabW, pad.top + 35 }, active ? 0x2B2521 : (hover ? 0x2C2825 : 0x1F1A18));
-        FillRectColor(hdc, { curX + tabW - 1, pad.top, curX + tabW, pad.top + 35 }, 0x1F1A18);
+        FillRectColor(hdc, { drawX, pad.top, drawX + tabW, pad.top + 35 }, active ? 0x2B2521 : (hover ? 0x2C2825 : 0x1F1A18));
+        FillRectColor(hdc, { drawX + tabW - 1, pad.top, drawX + tabW, pad.top + 35 }, 0x1F1A18);
         if (active) {
-            FillRectColor(hdc, { curX, pad.top, curX + tabW - 1, pad.top + 2 }, 0xFF8B52);
-            activeTabLeft = curX; activeTabRight = curX + tabW - 1;
+            FillRectColor(hdc, { drawX, pad.top, drawX + tabW - 1, pad.top + 2 }, 0xFF8B52);
+            if (!isDragged) { activeTabLeft = drawX; activeTabRight = drawX + tabW - 1; }
         }
         
-        RECT rcText = { curX + 10, pad.top, curX + tabW - 25, pad.top + 35 };
+        RECT rcText = { drawX + 10, pad.top, drawX + tabW - 25, pad.top + 35 };
         SetTextColor(hdc, active ? 0xFFFFFF : 0xBFB2AB); SetBkMode(hdc, TRANSPARENT);
         DrawTextW(hdc, tabs[i].title.c_str(), -1, &rcText, DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
         
-        if (hwndTabRenameEdit && IsWindowVisible(hwndTabRenameEdit) && tabRenameIndex == i) {
-            RECT rcBorder = { curX + 9, pad.top + 7, curX + tabW - 24, pad.top + 29 };
+        if (!isDragged && hwndTabRenameEdit && IsWindowVisible(hwndTabRenameEdit) && tabRenameIndex == i) {
+            RECT rcBorder = { drawX + 9, pad.top + 7, drawX + tabW - 24, pad.top + 29 };
             HBRUSH hBrBorder = CreateSolidBrush(0x51443E);
             FrameRect(hdc, &rcBorder, hBrBorder);
             DeleteObject(hBrBorder);
         }
         
-        RECT rcClose = { curX + tabW - 22, pad.top + 8, curX + tabW - 6, pad.top + 28 };
+        RECT rcClose = { drawX + tabW - 22, pad.top + 8, drawX + tabW - 6, pad.top + 28 };
         bool cHover = (hoverElement == HOVER_TAB_CLOSE_BASE + i), cPress = (pressedElement == HOVER_TAB_CLOSE_BASE + i);
         if (tabs[i].isModified && !cHover) {
-            FillRectColor(hdc, { curX + tabW - 16, pad.top + 14, curX + tabW - 10, pad.top + 20 }, 0xBFB2AB);
+            FillRectColor(hdc, { drawX + tabW - 16, pad.top + 14, drawX + tabW - 10, pad.top + 20 }, 0xBFB2AB);
         } else {
             DrawBtn(hdc, rcClose, L"\uE711", cHover, cPress, true, hIconFont, false, false, false, true);
         }
+    };
+
+    for (size_t i = 0; i < tabs.size(); ++i) {
+        int tabW = GetTabWidth(i);
+        if (i == draggedIdx) {
+            draggedLogicalX = curX;
+            FillRectColor(hdc, { curX, pad.top, curX + tabW, pad.top + 35 }, 0x1A1513);
+        } else {
+            drawTab(i, curX, false);
+        }
         curX += tabW;
+    }
+    
+    if (draggedIdx >= 0) {
+        POINT pt; GetCursorPos(&pt); ScreenToClient(h, &pt);
+        int dragOffset = pt.x - dragStartX;
+        drawTab(draggedIdx, draggedLogicalX + dragOffset, true);
     }
     
     // Clear clipping region so we can draw other components normally
