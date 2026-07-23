@@ -503,7 +503,7 @@ int ShowCustomPopupMenu(HWND hwndParent, int x, int y, const std::vector<PopupMe
 struct SettingsControlBtn {
     RECT rect;
     std::wstring label;
-    int settingType; // 1: Auto-Close Braces, 2: Indent Guides, 3: Caret Line, 4: Whitespace, 5: OK
+    int settingType; // 1: Auto-Close Braces, 2: Indent Guides, 3: Caret Line, 4: Whitespace, 5: Top Bar, 6: OK
     int value;       // parameter value
 };
 
@@ -512,6 +512,7 @@ struct CustomSettingsData {
     bool tempShowIndentGuides;
     bool tempShowWhitespace;
     bool tempCaretStyleBlock;
+    bool tempShowTopBar;
     int hoveredIndex;
     int pressedIndex;
     bool running;
@@ -578,6 +579,9 @@ LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
 
             RECT rcLblCaret = { 20, 210, 200, 240 };
             DrawTextW(memDC, L"Caret Cursor Style", -1, &rcLblCaret, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+
+            RECT rcLblTopBar = { 20, 260, 200, 290 };
+            DrawTextW(memDC, L"File Top Bar", -1, &rcLblTopBar, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
             
             // Draw Control Buttons
             SelectObject(memDC, hUIFont ? hUIFont : (HFONT)GetStockObject(DEFAULT_GUI_FONT));
@@ -592,6 +596,7 @@ LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 else if (btn.settingType == 2 && btn.value == (data->tempShowIndentGuides ? 1 : 0)) active = true;
                 else if (btn.settingType == 3 && btn.value == (data->tempShowWhitespace ? 1 : 0)) active = true;
                 else if (btn.settingType == 4 && btn.value == (data->tempCaretStyleBlock ? 1 : 0)) active = true;
+                else if (btn.settingType == 5 && btn.value == (data->tempShowTopBar ? 1 : 0)) active = true;
                 
                 COLORREF bgCol = 0x2B2521;
                 COLORREF borderCol = active ? 0xFF8B52 : 0x3C312C;
@@ -688,7 +693,8 @@ LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 else if (btn.settingType == 2) { data->tempShowIndentGuides = (btn.value == 1); showIndentGuides = data->tempShowIndentGuides; updated = true; }
                 else if (btn.settingType == 3) { data->tempShowWhitespace = (btn.value == 1); showWhitespace = data->tempShowWhitespace; updated = true; }
                 else if (btn.settingType == 4) { data->tempCaretStyleBlock = (btn.value == 1); caretStyleBlock = data->tempCaretStyleBlock; updated = true; }
-                else if (btn.settingType == 5) data->running = false; // OK
+                else if (btn.settingType == 5) { data->tempShowTopBar = (btn.value == 1); showTopBar = data->tempShowTopBar; updated = true; }
+                else if (btn.settingType == 6) data->running = false; // OK
                 
                 if (updated) {
                     if (hwndScintilla) {
@@ -696,8 +702,11 @@ LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                     }
                     HWND hwndParent = GetParent(hwnd);
                     if (hwndParent) {
+                        RECT rcP; GetClientRect(hwndParent, &rcP);
+                        SendMessage(hwndParent, WM_SIZE, 0, MAKELPARAM(rcP.right, rcP.bottom));
                         UpdateUI(hwndParent);
                     }
+                    SaveSession();
                 }
                 InvalidateRect(hwnd, NULL, FALSE);
             }
@@ -731,6 +740,7 @@ void ShowSettingsDialog(HWND hwndParent) {
     data.tempShowIndentGuides = showIndentGuides;
     data.tempShowWhitespace = showWhitespace;
     data.tempCaretStyleBlock = caretStyleBlock;
+    data.tempShowTopBar = showTopBar;
     data.hoveredIndex = -1;
     data.pressedIndex = -1;
     data.running = true;
@@ -751,12 +761,16 @@ void ShowSettingsDialog(HWND hwndParent) {
         // Caret Cursor Style
         { { 210, 210, 290, 238 }, L"Block", 4, 1 },
         { { 300, 210, 380, 238 }, L"Line", 4, 0 },
+
+        // File Top Bar
+        { { 210, 260, 290, 288 }, L"Visible", 5, 1 },
+        { { 300, 260, 380, 288 }, L"Hidden", 5, 0 },
         
         // OK Button
-        { { 150, 270, 250, 305 }, L"OK", 5, 0 }
+        { { 150, 320, 250, 355 }, L"OK", 6, 0 }
     };
     
-    int dlgW = 400, dlgH = 330;
+    int dlgW = 400, dlgH = 380;
     int x = CW_USEDEFAULT, y = CW_USEDEFAULT;
     if (hwndParent) {
         RECT rcParent;
@@ -798,10 +812,16 @@ void ShowSettingsDialog(HWND hwndParent) {
     showIndentGuides = data.tempShowIndentGuides;
     showWhitespace = data.tempShowWhitespace;
     caretStyleBlock = data.tempCaretStyleBlock;
+    showTopBar = data.tempShowTopBar;
     
     if (hwndScintilla) {
         StyleScintilla(hwndScintilla);
     }
     
-    UpdateUI(hwndParent);
+    if (hwndParent) {
+        RECT rcP; GetClientRect(hwndParent, &rcP);
+        SendMessage(hwndParent, WM_SIZE, 0, MAKELPARAM(rcP.right, rcP.bottom));
+        UpdateUI(hwndParent);
+    }
+    SaveSession();
 }

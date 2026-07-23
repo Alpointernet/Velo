@@ -56,6 +56,7 @@ bool autoCloseBraces = true;
 bool showIndentGuides = true;
 bool showWhitespace = false;
 bool caretStyleBlock = false;
+bool showTopBar = true;
 bool isSavingSession = false;
 
 LRESULT CALLBACK SearchEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -367,6 +368,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             else if (id == IDM_SETTINGS_DIALOG) {
                 ShowSettingsDialog(hwnd);
             }
+            else if (id == IDM_TOGGLE_TOPBAR) {
+                showTopBar = !showTopBar;
+                SaveSession();
+                RECT rc; GetClientRect(hwnd, &rc);
+                SendMessage(hwnd, WM_SIZE, 0, MAKELPARAM(rc.right, rc.bottom));
+                UpdateUI(hwnd);
+            }
             break;
         }
         case WM_CTLCOLOREDIT: {
@@ -432,19 +440,21 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             RECT rc; GetClientRect(hwnd, &rc); RECT pad = GetPad(hwnd);
             HDC memDC = CreateCompatibleDC(hdc); HBITMAP memBmp = CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
             HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, memBmp);
-            PaintTopBar(hwnd, memDC, rc); PaintHeaderBar(hwnd, memDC, rc);
+            PaintTopBar(hwnd, memDC, rc);
+            if (showTopBar) PaintHeaderBar(hwnd, memDC, rc);
+            int topBarH = showTopBar ? 70 : 36;
             int offset = 0;
             if (searchVisible) {
                 PaintSearchBar(hwnd, memDC, rc);
                 bool inlineReplace = (rc.right - pad.right - pad.left > 1230);
                 offset = replaceVisible ? (inlineReplace ? 36 : 72) : 36;
             }
-            RECT rcTopGap = { pad.left, pad.top + 70 + offset, rc.right - pad.right, pad.top + 70 + offset + EDITOR_TOP_MARGIN };
+            RECT rcTopGap = { pad.left, pad.top + topBarH + offset, rc.right - pad.right, pad.top + topBarH + offset + EDITOR_TOP_MARGIN };
             FillRectColor(memDC, rcTopGap, 0x2B2521);
             POINT oldOrg; SetWindowOrgEx(memDC, 0, -(rc.bottom - pad.bottom - 24), &oldOrg);
             PaintStatusBar(hwnd, memDC, rc); SetWindowOrgEx(memDC, oldOrg.x, oldOrg.y, NULL);
-            if (pad.left > 1) FillRectColor(memDC, { 0, pad.top + 70 + offset, pad.left, rc.bottom - pad.bottom - 24 }, 0x2B2521);
-            if (pad.right > 1) FillRectColor(memDC, { rc.right - pad.right, pad.top + 70 + offset, rc.right, rc.bottom - pad.bottom - 24 }, 0x2B2521);
+            if (pad.left > 1) FillRectColor(memDC, { 0, pad.top + topBarH + offset, pad.left, rc.bottom - pad.bottom - 24 }, 0x2B2521);
+            if (pad.right > 1) FillRectColor(memDC, { rc.right - pad.right, pad.top + topBarH + offset, rc.right, rc.bottom - pad.bottom - 24 }, 0x2B2521);
             if (pad.bottom > 1) FillRectColor(memDC, { 0, rc.bottom - pad.bottom, rc.right, rc.bottom }, 0x1F1A18);
             
             FillRectColor(memDC, { 0, 0, rc.right, 1 }, 0x3C312C);
@@ -465,16 +475,17 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 if (searchVisible) {
                     offset = replaceVisible ? (inlineReplace ? 36 : 72) : 36;
                 }
-                int topH = pad.top + 70 + offset + EDITOR_TOP_MARGIN;
+                int topBarH = showTopBar ? 70 : 36;
+                int topH = pad.top + topBarH + offset + EDITOR_TOP_MARGIN;
                 int ew = rc.right - pad.left - pad.right;
                 int eh = rc.bottom - topH - 24 - pad.bottom;
                 SetWindowPos(hwndScintilla, NULL, pad.left, topH, ew, eh, SWP_NOZORDER);
 
                 if (searchVisible) {
-                    int searchY = pad.top + 70 + 10;
+                    int searchY = pad.top + topBarH + 10;
                     SetWindowPos(hwndSearchEdit, NULL, pad.left + 9, searchY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
                     if (replaceVisible) {
-                        int replaceY = pad.top + 70 + (inlineReplace ? 0 : 36) + 10;
+                        int replaceY = pad.top + topBarH + (inlineReplace ? 0 : 36) + 10;
                         int replaceX = pad.left + 9 + (inlineReplace ? 412 : 0);
                         SetWindowPos(hwndReplaceEdit, NULL, replaceX, replaceY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
                     } else {
@@ -598,7 +609,60 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     return 0;
 }
 
+void CleanupUserChoiceAssociations() {
+    const wchar_t* extensions[] = {
+        L".txt", L".log", L".md", L".markdown", L".json", L".jsonc", L".xml", L".html", L".htm", L".css", L".scss",
+        L".ini", L".cfg", L".conf", L".config", L".env", L".yaml", L".yml", L".toml", L".c", L".cpp", L".cc", L".h",
+        L".hpp", L".cs", L".java", L".js", L".jsx", L".ts", L".tsx", L".py", L".rb", L".go", L".rs", L".sql", L".ahk",
+        L".rc", L".bat", L".cmd", L".ps1", L".sh", L".iss"
+    };
+
+    bool didChange = false;
+    for (const wchar_t* ext : extensions) {
+        std::wstring subKey = std::wstring(L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\") + ext + L"\\UserChoice";
+        HKEY hKey;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, subKey.c_str(), 0, KEY_READ | KEY_WRITE, &hKey) == ERROR_SUCCESS) {
+            wchar_t value[256] = {0};
+            DWORD valueSize = sizeof(value);
+            DWORD type = 0;
+            if (RegQueryValueExW(hKey, L"ProgId", NULL, &type, (LPBYTE)value, &valueSize) == ERROR_SUCCESS) {
+                if (wcscmp(value, L"Velo.Document") == 0) {
+                    RegCloseKey(hKey);
+                    hKey = NULL;
+                    
+                    // 1. Create/Open HKCU\Software\Classes\<ext> and set default value to Velo<ext>
+                    std::wstring classesKey = std::wstring(L"Software\\Classes\\") + ext;
+                    HKEY hClasses;
+                    if (RegCreateKeyExW(HKEY_CURRENT_USER, classesKey.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hClasses, NULL) == ERROR_SUCCESS) {
+                        std::wstring progId = std::wstring(L"Velo") + ext;
+                        RegSetValueExW(hClasses, NULL, 0, REG_SZ, (const BYTE*)progId.c_str(), (DWORD)((progId.length() + 1) * sizeof(wchar_t)));
+                        RegCloseKey(hClasses);
+                    }
+                    
+                    // 2. Delete UserChoice key
+                    std::wstring parentKey = std::wstring(L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\") + ext;
+                    HKEY hParent;
+                    if (RegOpenKeyExW(HKEY_CURRENT_USER, parentKey.c_str(), 0, KEY_WRITE, &hParent) == ERROR_SUCCESS) {
+                        if (RegDeleteKeyW(hParent, L"UserChoice") == ERROR_SUCCESS) {
+                            didChange = true;
+                        }
+                        RegCloseKey(hParent);
+                    }
+                }
+            }
+            if (hKey) {
+                RegCloseKey(hKey);
+            }
+        }
+    }
+
+    if (didChange) {
+        SHChangeNotify(0x08000000, 0, NULL, NULL); // SHCNE_ASSOCCHANGED, SHCNF_IDLIST
+    }
+}
+
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nCmd) {
+    CleanupUserChoiceAssociations();
     SetProcessDPIAware();
     LoadFonts();
     WNDCLASSW wc = { CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW, WndProc, 0, 0, hInst, LoadIconW(hInst, MAKEINTRESOURCEW(1)), LoadCursorW(NULL, (LPCWSTR)IDC_ARROW), NULL, NULL, L"VeloClass" };
@@ -619,6 +683,44 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nCmd) {
         return 0;
     }
     ShowWindow(hwnd, nCmd);
+    
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (argv) {
+        bool openedAny = false;
+        for (int i = 1; i < argc; ++i) {
+            std::wstring filePath = argv[i];
+            if (filePath.empty()) continue;
+            
+            wchar_t fullPath[MAX_PATH];
+            if (GetFullPathNameW(filePath.c_str(), MAX_PATH, fullPath, NULL) != 0) {
+                filePath = fullPath;
+            }
+            
+            int existingIndex = -1;
+            for (size_t t = 0; t < tabs.size(); ++t) {
+                if (!_wcsicmp(tabs[t].filePath.c_str(), filePath.c_str())) {
+                    existingIndex = (int)t;
+                    break;
+                }
+            }
+            
+            if (existingIndex >= 0) {
+                SwitchToTab(hwnd, existingIndex);
+                openedAny = true;
+            } else {
+                if (!openedAny && tabs.size() == 1 && tabs[0].filePath.empty() && Sci(SCI_GETLENGTH) == 0 && !tabs[0].isModified) {
+                    LoadFileInActiveTab(hwnd, filePath.c_str());
+                } else {
+                    CreateNewTab(hwnd, filePath);
+                    LoadFileInActiveTab(hwnd, filePath.c_str());
+                }
+                openedAny = true;
+            }
+        }
+        LocalFree(argv);
+    }
+
     if (hwndScintilla) {
         SetFocus(hwndScintilla);
     }

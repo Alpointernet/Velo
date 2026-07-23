@@ -22,7 +22,8 @@ void UpdateUI(HWND h) {
     RECT rc; GetClientRect(h, &rc); RECT pad = GetPad(h);
     bool inlineReplace = (rc.right - pad.right - pad.left > 1230);
     int offset = searchVisible ? (replaceVisible ? (inlineReplace ? 36 : 72) : 36) : 0;
-    RECT rcTop = { 0, 0, rc.right, pad.top + 70 + EDITOR_TOP_MARGIN + offset }, rcStatus = { 0, rc.bottom - pad.bottom - 24, rc.right, rc.bottom };
+    int topBarH = showTopBar ? 70 : 36;
+    RECT rcTop = { 0, 0, rc.right, pad.top + topBarH + EDITOR_TOP_MARGIN + offset }, rcStatus = { 0, rc.bottom - pad.bottom - 24, rc.right, rc.bottom };
     InvalidateRect(h, &rcTop, FALSE); InvalidateRect(h, &rcStatus, FALSE);
     std::wstring title = (tabs[activeTabIndex].filePath.empty() ? L"Untitled" : tabs[activeTabIndex].filePath) + (tabs[activeTabIndex].isModified ? L"*" : L"") + L" - Velo";
     static std::wstring lastTitle = L"";
@@ -43,7 +44,8 @@ void SyncScrollbars() {
     
     int offset = 0;
     if (searchVisible) offset = replaceVisible ? (isInline ? 36 : 72) : 36;
-    int sciX = pad.left, sciY = pad.top + 70 + offset + EDITOR_TOP_MARGIN;
+    int topBarH = showTopBar ? 70 : 36;
+    int sciX = pad.left, sciY = pad.top + topBarH + offset + EDITOR_TOP_MARGIN;
 
     int marginW = GetTotalMarginWidth(); 
     int vLineH = Sci(SCI_TEXTHEIGHT);
@@ -177,9 +179,10 @@ HoverElement HitTest(HWND h, POINT pt) {
             }
         }
     }
-    if (searchVisible && pt.y >= pad.top + 70 && pt.y < pad.top + 70 + (replaceVisible ? (rc.right - pad.right - pad.left > 1230 ? 36 : 72) : 36)) {
+    int topBarH = showTopBar ? 70 : 36;
+    if (searchVisible && pt.y >= pad.top + topBarH && pt.y < pad.top + topBarH + (replaceVisible ? (rc.right - pad.right - pad.left > 1230 ? 36 : 72) : 36)) {
         bool inlineReplace = (rc.right - pad.right - pad.left > 1230);
-        int topY = pad.top + 70;
+        int topY = pad.top + topBarH;
         int relY = pt.y - topY;
         
         if (pt.y >= topY && pt.y < topY + 36) {
@@ -319,6 +322,7 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
 }
 
 void PaintHeaderBar(HWND h, HDC hdc, const RECT& rc) {
+    if (!showTopBar) return;
     RECT pad = GetPad(h);
     FillRectColor(hdc, { 0, pad.top + 36, rc.right, pad.top + 70 }, 0x2B2521);
     FillRectColor(hdc, { pad.left, pad.top + 69, rc.right - pad.right, pad.top + 70 }, 0x3C312C);
@@ -434,6 +438,7 @@ void TriggerSettingsMenu(HWND h) {
         { L"", 0, true, false, L"" },
         { L"Word Wrap", IDM_TOGGLE_WRAP, false, Sci(SCI_GETWRAPMODE) != SC_WRAP_NONE, L"" },
         { L"Line Numbers", IDM_TOGGLE_LINES, false, Sci(SCI_GETMARGINWIDTHN, 0) > 0, L"" },
+        { L"File Top Bar", IDM_TOGGLE_TOPBAR, false, showTopBar, L"" },
         { L"", 0, true, false, L"" },
         { L"Settings...", IDM_SETTINGS_DIALOG, false, false, L"" },
         { L"", 0, true, false, L"" },
@@ -452,7 +457,7 @@ void TriggerSettingsMenu(HWND h) {
 void PaintSearchBar(HWND h, HDC hdc, const RECT& rc) {
     RECT pad = GetPad(h);
     bool inlineReplace = (rc.right - pad.right - pad.left > 1230);
-    int topY = pad.top + 70;
+    int topY = pad.top + (showTopBar ? 70 : 36);
     int height = replaceVisible ? (inlineReplace ? 36 : 72) : 36;
     
     // Background

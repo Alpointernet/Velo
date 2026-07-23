@@ -2,6 +2,8 @@
 #define GLOBALS_H
 
 #include <windows.h>
+#include <shellapi.h>
+#include <shlobj.h>
 #include <dwmapi.h>
 #include <uxtheme.h>
 #include <commdlg.h>
@@ -14,6 +16,7 @@
 #pragma comment(lib, "uxtheme.lib")
 #pragma comment(lib, "comdlg32.lib")
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "advapi32.lib")
 
 // Standalone Scintilla Lexer IDs
 #define SCLEX_NULL 0
@@ -71,6 +74,7 @@
 #define IDM_TOGGLE_WRAP 3001
 #define IDM_TOGGLE_LINES 3002
 #define IDM_SETTINGS_DIALOG 3003
+#define IDM_TOGGLE_TOPBAR 3004
 #define CUSTOM_SB_SIZE 10
 #define EDITOR_TOP_MARGIN 6
 
@@ -151,6 +155,7 @@ extern bool autoCloseBraces;
 extern bool showIndentGuides;
 extern bool showWhitespace;
 extern bool caretStyleBlock;
+extern bool showTopBar;
 extern bool isSavingSession;
 
 // Utilities

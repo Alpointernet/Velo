@@ -188,12 +188,26 @@ void LoadFileInActiveTab(HWND h, const wchar_t* path) {
             SaveSession();
         }
         CloseHandle(hFile);
+    } else {
+        tabs[activeTabIndex] = { path, GetFileName(path), tabs[activeTabIndex].docPointer, false, L"", true };
+        Sci(SCI_CLEARALL); Sci(SCI_SETSAVEPOINT); Sci(SCI_EMPTYUNDOBUFFER);
+        activeLineStart = -1; activeLineEnd = -1; ApplySyntax(); SyncLineNumbers(true);
+        UpdateUI(h);
+        SaveSession();
     }
 }
 
 void DoFileOpen(HWND h) {
     wchar_t szFile[260] = { 0 };
-    OPENFILENAMEW ofn = { sizeof(ofn), h, 0, L"All Files\0*.*\0Text Files\0*.txt\0", 0, 0, 1, szFile, 260, 0, 0, 0, 0, OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST };
+    OPENFILENAMEW ofn = { 0 };
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = h;
+    ofn.lpstrFilter = L"Text Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
+    ofn.nFilterIndex = 1;
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = 260;
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
     if (GetOpenFileNameW(&ofn)) {
         for (size_t i = 0; i < tabs.size(); ++i) if (!_wcsicmp(tabs[i].filePath.c_str(), ofn.lpstrFile)) { SwitchToTab(h, i); return; }
         if (tabs[activeTabIndex].filePath.empty() && Sci(SCI_GETLENGTH) == 0 && !tabs[activeTabIndex].isModified) LoadFileInActiveTab(h, ofn.lpstrFile);
@@ -214,8 +228,22 @@ void DoFileSave(HWND h) {
 
 void DoFileSaveAs(HWND h) {
     wchar_t szFile[260] = { 0 };
-    if (!tabs[activeTabIndex].filePath.empty()) wcscpy_s(szFile, tabs[activeTabIndex].filePath.c_str());
-    OPENFILENAMEW ofn = { sizeof(ofn), h, 0, L"All Files\0*.*\0Text Files\0*.txt\0", 0, 0, 1, szFile, 260, 0, 0, 0, 0, OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT };
+    if (!tabs[activeTabIndex].filePath.empty()) {
+        wcscpy_s(szFile, tabs[activeTabIndex].filePath.c_str());
+    } else {
+        wcscpy_s(szFile, L"Untitled.txt");
+    }
+
+    OPENFILENAMEW ofn = { 0 };
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = h;
+    ofn.lpstrFilter = L"Text Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
+    ofn.nFilterIndex = 1;
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = 260;
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
+    ofn.lpstrDefExt = L"txt";
+
     if (GetSaveFileNameW(&ofn)) {
         tabs[activeTabIndex].filePath = ofn.lpstrFile; tabs[activeTabIndex].title = GetFileName(ofn.lpstrFile);
         DoFileSave(h);
@@ -283,6 +311,7 @@ void SaveSession() {
     out << "showIndentGuides=" << (showIndentGuides ? 1 : 0) << "\n";
     out << "showWhitespace=" << (showWhitespace ? 1 : 0) << "\n";
     out << "caretStyleBlock=" << (caretStyleBlock ? 1 : 0) << "\n";
+    out << "showTopBar=" << (showTopBar ? 1 : 0) << "\n";
     out << "activeTab=" << activeTabIndex << "\n";
     
     out << "\n[Tabs]\n";
@@ -396,6 +425,7 @@ void LoadSession(HWND hwndParent) {
             else if (key == "showIndentGuides") showIndentGuides = (val == "1");
             else if (key == "showWhitespace") showWhitespace = (val == "1");
             else if (key == "caretStyleBlock") caretStyleBlock = (val == "1");
+            else if (key == "showTopBar") showTopBar = (val == "1");
             else if (key == "activeTab") loadedActiveTab = std::stoi(val);
             else if (key == "count") {
                 tabCount = std::stoi(val);
