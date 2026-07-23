@@ -400,6 +400,19 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_MOUSEMOVE: {
             POINT pt = { (int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam) };
             HoverElement newHover = HitTest(hwnd, pt);
+            
+            if (GetCapture() == hwnd && pressedElement >= HOVER_TAB_BASE && pressedElement < HOVER_TAB_CLOSE_BASE) {
+                if (newHover >= HOVER_TAB_BASE && newHover < HOVER_TAB_CLOSE_BASE && newHover != pressedElement) {
+                    int oldIdx = pressedElement - HOVER_TAB_BASE;
+                    int newIdx = newHover - HOVER_TAB_BASE;
+                    std::swap(tabs[oldIdx], tabs[newIdx]);
+                    if (activeTabIndex == (size_t)oldIdx) activeTabIndex = newIdx;
+                    else if (activeTabIndex == (size_t)newIdx) activeTabIndex = oldIdx;
+                    pressedElement = newHover;
+                    UpdateUI(hwnd);
+                }
+            }
+            
             if (newHover != hoverElement) { hoverElement = newHover; UpdateUI(hwnd); TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, hwnd, 0 }; TrackMouseEvent(&tme); }
             break;
         }
