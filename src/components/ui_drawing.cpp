@@ -433,7 +433,7 @@ void TriggerSettingsMenu(HWND h) {
         { L"New Tab", IDM_FILE_NEW, false, false, L"Ctrl+N" },
         { L"Open File...", IDM_FILE_OPEN, false, false, L"Ctrl+O" },
         { L"Save File", IDM_FILE_SAVE, false, false, L"Ctrl+S" },
-        { L"Save File As...", IDM_FILE_SAVE_AS, false, false, L"" },
+        { L"Save File As...", IDM_FILE_SAVE_AS, false, false, L"Ctrl+Shift+S" },
         { L"Close Tab", IDM_FILE_CLOSE_TAB, false, false, L"Ctrl+W" },
         { L"", 0, true, false, L"" },
         { L"Word Wrap", IDM_TOGGLE_WRAP, false, Sci(SCI_GETWRAPMODE) != SC_WRAP_NONE, L"" },

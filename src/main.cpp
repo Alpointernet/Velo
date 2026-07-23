@@ -731,7 +731,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nCmd) {
             switch (msg.wParam) {
                 case 'N': CreateNewTab(hwnd); continue;
                 case 'O': DoFileOpen(hwnd); continue;
-                case 'S': DoFileSave(hwnd); continue;
+                case 'S': 
+                    if (shift) DoFileSaveAs(hwnd);
+                    else DoFileSave(hwnd);
+                    continue;
                 case 'W': 
                     if (shift) {
                         for (int i = (int)tabs.size() - 1; i >= 0; --i) {
