@@ -37,7 +37,7 @@ std::vector<Tab> tabs;
 size_t activeTabIndex = 0;
 HoverElement hoverElement = HOVER_NONE;
 HoverElement pressedElement = HOVER_NONE;
-int dragStartX = 0;
+int dragGrabOffset = 0;
 WNDPROC oldSearchEditProc = NULL;
 WNDPROC oldReplaceEditProc = NULL;
 WNDPROC oldSciProc = NULL;
@@ -409,11 +409,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     std::swap(tabs[oldIdx], tabs[newIdx]);
                     if (activeTabIndex == (size_t)oldIdx) activeTabIndex = newIdx;
                     else if (activeTabIndex == (size_t)newIdx) activeTabIndex = oldIdx;
-                    if (newIdx > oldIdx) dragStartX += GetTabWidth(oldIdx); // oldIdx has the swapped tab
-                    else dragStartX -= GetTabWidth(oldIdx);
                     pressedElement = newHover;
-                    UpdateUI(hwnd);
                 }
+                UpdateUI(hwnd);
             }
             
             if (newHover != hoverElement) { hoverElement = newHover; UpdateUI(hwnd); TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, hwnd, 0 }; TrackMouseEvent(&tme); }
@@ -422,7 +420,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_MOUSELEAVE: { hoverElement = HOVER_NONE; UpdateUI(hwnd); break; }
         case WM_LBUTTONDOWN: {
             POINT pt = { (int)(short)LOWORD(lParam), (short)HIWORD(lParam) }; pressedElement = HitTest(hwnd, pt);
-            if (pressedElement >= HOVER_TAB_BASE && pressedElement < HOVER_TAB_CLOSE_BASE) dragStartX = pt.x;
+            if (pressedElement >= HOVER_TAB_BASE && pressedElement < HOVER_TAB_CLOSE_BASE) {
+                RECT rc2; GetClientRect(hwnd, &rc2); RECT pad2 = GetPad(hwnd);
+                int sx = pad2.left + 70, cx = sx;
+                int tabIdx = pressedElement - HOVER_TAB_BASE;
+                for (int t = 0; t < tabIdx; ++t) cx += GetTabWidth(t);
+                dragGrabOffset = pt.x - cx;
+            }
             UpdateUI(hwnd); SetCapture(hwnd); break;
         }
         case WM_LBUTTONDBLCLK: {

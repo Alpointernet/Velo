@@ -308,8 +308,13 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
     
     if (draggedIdx >= 0) {
         POINT pt; GetCursorPos(&pt); ScreenToClient(h, &pt);
-        int dragOffset = pt.x - dragStartX;
-        drawTab(draggedIdx, draggedLogicalX + dragOffset, true);
+        int tabW = GetTabWidth(draggedIdx);
+        int drawX = pt.x - dragGrabOffset;
+        // Clamp so the dragged tab stays within the tab area
+        if (drawX < startX) drawX = startX;
+        if (drawX + tabW > tabLimit) drawX = tabLimit - tabW;
+        drawTab(draggedIdx, drawX, true);
+        if ((size_t)draggedIdx == activeTabIndex) { activeTabLeft = drawX; activeTabRight = drawX + tabW - 1; }
     }
     
     // Clear clipping region so we can draw other components normally
