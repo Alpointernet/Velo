@@ -14,7 +14,7 @@
 
 ## Key Features
 
-Most text editors are usually either too simple, or too bloated that you need to set everything up. This comes great out of the box with the philosophy of simple is better.
+Most text editors are either too simple, or too bloated, which makes it harder to get the best experience. Velo comes great out of the box, as simple is better.
 
 - **Lightweight:** Opens the second you click it, and consumes very little memory.
 - **Functional:** Has tabs, search and replace tools.  
