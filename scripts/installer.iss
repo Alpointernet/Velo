@@ -2,8 +2,8 @@
 SourceDir=..
 AppName=Velo
 AppVersion=1.0
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 DefaultDirName={autopf}\Velo
 DefaultGroupName=Velo
 UninstallDisplayIcon={app}\Velo.exe
