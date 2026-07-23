@@ -90,7 +90,7 @@ void ShowScrollbars(HWND h) {
 
 void ApplyDarkMode(HWND hwnd) {
     int val = 1; DwmSetWindowAttribute(hwnd, 20, &val, sizeof(val));
-    COLORREF border = 0x003C312C; DwmSetWindowAttribute(hwnd, 34, &border, sizeof(border));
+    COLORREF border = theme.border; DwmSetWindowAttribute(hwnd, 34, &border, sizeof(border));
     if (HMODULE hUxtheme = LoadLibraryExW(L"uxtheme.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32)) {
         if (auto SetMode = (int(WINAPI*)(int))GetProcAddress(hUxtheme, MAKEINTRESOURCEA(135))) SetMode(1);
         if (auto AllowDark = (bool(WINAPI*)(HWND, bool))GetProcAddress(hUxtheme, MAKEINTRESOURCEA(133))) AllowDark(hwnd, true);
@@ -113,7 +113,7 @@ RECT GetEolRect(HWND h, HDC hdc, const RECT& rc) {
             if (!_wcsicmp(e.c_str(), L"cpp") || !_wcsicmp(e.c_str(), L"h") || !_wcsicmp(e.c_str(), L"hpp") || !_wcsicmp(e.c_str(), L"c")) lang = L"C++";
             else if (!_wcsicmp(e.c_str(), L"py")) lang = L"Python";
             else if (!_wcsicmp(e.c_str(), L"js") || !_wcsicmp(e.c_str(), L"ts")) lang = L"JavaScript";
-            else if (!_wcsicmp(e.c_str(), L"html") || !_wcsicmp(e.c_str(), L"htm") || !_wcsicmp(e.c_str(), L"xml")) lang = L"HTML";
+            else if (!_wcsicmp(e.c_str(), L"html") || !_wcsicmp(e.c_str(), L"htm") || (!_wcsicmp(e.c_str(), L"xml"))) lang = L"HTML";
             else if (!_wcsicmp(e.c_str(), L"json")) lang = L"JSON";
             else if (!_wcsicmp(e.c_str(), L"md") || !_wcsicmp(e.c_str(), L"markdown")) lang = L"Markdown";
         }
@@ -210,18 +210,18 @@ HoverElement HitTest(HWND h, POINT pt) {
 }
 
 void DrawBtn(HDC hdc, RECT rc, const wchar_t* text, bool hover, bool press, bool isClose, HFONT font, bool disabled, bool toggled, bool elevated, bool noBg) {
-    COLORREF textCol = disabled ? 0x443630 : 0xD4D4D4;
-    COLORREF bgCol = elevated ? 0x322A26 : 0;
+    COLORREF textCol = disabled ? theme.textDisabled : theme.textNormal;
+    COLORREF bgCol = elevated ? theme.hoverBg : 0;
     bool hasBg = elevated;
     if (!disabled) {
         if (noBg) {
-            if (hover || press) textCol = 0xFFFFFF;
+            if (hover || press) textCol = theme.textActive;
             hasBg = false;
         }
-        else if (isClose && hover) { bgCol = press ? 0x7A70F1 : 0x2311E8; textCol = 0xFFFFFF; hasBg = true; }
-        else if (toggled) { bgCol = hover ? 0x51443E : 0x3C312C; textCol = 0xFF8B52; hasBg = true; }
-        else if (press) { bgCol = 0x51443E; if (!isClose) textCol = 0xFFFFFF; hasBg = true; }
-        else if (hover) { bgCol = 0x3C312C; if (!isClose) textCol = 0xFFFFFF; hasBg = true; }
+        else if (isClose && hover) { bgCol = press ? theme.closePress : theme.closeHover; textCol = theme.textActive; hasBg = true; } // Close buttons have distinct native red
+        else if (toggled) { bgCol = hover ? theme.hoverBg : theme.border; textCol = theme.accent; hasBg = true; }
+        else if (press) { bgCol = theme.hoverBg; if (!isClose) textCol = theme.textActive; hasBg = true; }
+        else if (hover) { bgCol = theme.border; if (!isClose) textCol = theme.textActive; hasBg = true; }
     } else {
         hasBg = false;
     }
@@ -234,7 +234,7 @@ void DrawBtn(HDC hdc, RECT rc, const wchar_t* text, bool hover, bool press, bool
 
 void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
     RECT pad = GetPad(h);
-    FillRectColor(hdc, { 0, 0, rc.right, pad.top + 35 }, 0x1F1A18);
+    FillRectColor(hdc, { 0, 0, rc.right, pad.top + 35 }, theme.tabBg);
     
     bool canUndo = Sci(SCI_CANUNDO) != 0;
     bool canRedo = Sci(SCI_CANREDO) != 0;
@@ -268,20 +268,20 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
         bool active = (i == activeTabIndex), hover = (hoverElement == HOVER_TAB_BASE + i || hoverElement == HOVER_TAB_CLOSE_BASE + i);
         if (isDragged) hover = true;
         
-        FillRectColor(hdc, { drawX, pad.top, drawX + tabW, pad.top + 35 }, active ? 0x2B2521 : (hover ? 0x2C2825 : 0x1F1A18));
-        FillRectColor(hdc, { drawX + tabW - 1, pad.top, drawX + tabW, pad.top + 35 }, 0x1F1A18);
+        FillRectColor(hdc, { drawX, pad.top, drawX + tabW, pad.top + 35 }, active ? theme.bg : (hover ? theme.hoverBg : theme.tabBg));
+        FillRectColor(hdc, { drawX + tabW - 1, pad.top, drawX + tabW, pad.top + 35 }, theme.tabBg);
         if (active) {
-            FillRectColor(hdc, { drawX, pad.top, drawX + tabW - 1, pad.top + 2 }, 0xFF8B52);
+            FillRectColor(hdc, { drawX, pad.top, drawX + tabW - 1, pad.top + 2 }, theme.accent);
             if (!isDragged) { activeTabLeft = drawX; activeTabRight = drawX + tabW - 1; }
         }
         
         RECT rcText = { drawX + 10, pad.top, drawX + tabW - 25, pad.top + 35 };
-        SetTextColor(hdc, active ? 0xFFFFFF : 0xBFB2AB); SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, active ? theme.textActive : theme.textDim); SetBkMode(hdc, TRANSPARENT);
         DrawTextW(hdc, tabs[i].title.c_str(), -1, &rcText, DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
         
         if (!isDragged && hwndTabRenameEdit && IsWindowVisible(hwndTabRenameEdit) && tabRenameIndex == i) {
             RECT rcBorder = { drawX + 9, pad.top + 7, drawX + tabW - 24, pad.top + 29 };
-            HBRUSH hBrBorder = CreateSolidBrush(0x51443E);
+            HBRUSH hBrBorder = CreateSolidBrush(theme.border);
             FrameRect(hdc, &rcBorder, hBrBorder);
             DeleteObject(hBrBorder);
         }
@@ -289,7 +289,7 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
         RECT rcClose = { drawX + tabW - 22, pad.top + 8, drawX + tabW - 6, pad.top + 28 };
         bool cHover = (hoverElement == HOVER_TAB_CLOSE_BASE + i), cPress = (pressedElement == HOVER_TAB_CLOSE_BASE + i);
         if (tabs[i].isModified && !cHover) {
-            FillRectColor(hdc, { drawX + tabW - 16, pad.top + 14, drawX + tabW - 10, pad.top + 20 }, 0xBFB2AB);
+            FillRectColor(hdc, { drawX + tabW - 16, pad.top + 14, drawX + tabW - 10, pad.top + 20 }, theme.textDim);
         } else {
             DrawBtn(hdc, rcClose, L"\uE711", cHover, cPress, true, hIconFont, false, false, false, true);
         }
@@ -297,9 +297,9 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
 
     for (size_t i = 0; i < tabs.size(); ++i) {
         int tabW = GetTabWidth(i);
-        if (i == draggedIdx) {
+        if (i == (size_t)draggedIdx) {
             draggedLogicalX = curX;
-            FillRectColor(hdc, { curX, pad.top, curX + tabW, pad.top + 35 }, 0x1A1513);
+            FillRectColor(hdc, { curX, pad.top, curX + tabW, pad.top + 35 }, theme.tabBg);
         } else {
             drawTab(i, curX, false);
         }
@@ -314,7 +314,7 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
         if (drawX < startX) drawX = startX;
         if (drawX + tabW > tabLimit) drawX = tabLimit - tabW;
         drawTab(draggedIdx, drawX, true);
-        if ((size_t)draggedIdx == activeTabIndex) { activeTabLeft = drawX; activeTabRight = drawX + tabW - 1; }
+        if (draggedIdx == activeTabIndex) { activeTabLeft = drawX; activeTabRight = drawX + tabW - 1; }
     }
     
     // Clear clipping region so we can draw other components normally
@@ -325,18 +325,18 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
         // Only paint active tab lines if the active tab is at least partially visible
         if (activeTabLeft < tabLimit) {
             int rightLineLimit = min(activeTabRight, tabLimit);
-            FillRectColor(hdc, { pad.left, pad.top + 35, activeTabLeft, pad.top + 36 }, 0x3C312C);
-            FillRectColor(hdc, { rightLineLimit, pad.top + 35, rc.right - pad.right, pad.top + 36 }, 0x3C312C);
-            FillRectColor(hdc, { activeTabLeft, pad.top + 35, rightLineLimit, pad.top + 36 }, 0x2B2521);
-            FillRectColor(hdc, { activeTabLeft - 1, pad.top, activeTabLeft, pad.top + 36 }, 0x3C312C);
+            FillRectColor(hdc, { pad.left, pad.top + 35, activeTabLeft, pad.top + 36 }, theme.border);
+            FillRectColor(hdc, { rightLineLimit, pad.top + 35, rc.right - pad.right, pad.top + 36 }, theme.border);
+            FillRectColor(hdc, { activeTabLeft, pad.top + 35, rightLineLimit, pad.top + 36 }, theme.bg);
+            FillRectColor(hdc, { activeTabLeft - 1, pad.top, activeTabLeft, pad.top + 36 }, theme.border);
             if (activeTabRight < tabLimit) {
-                FillRectColor(hdc, { activeTabRight, pad.top, activeTabRight + 1, pad.top + 36 }, 0x3C312C);
+                FillRectColor(hdc, { activeTabRight, pad.top, activeTabRight + 1, pad.top + 36 }, theme.border);
             }
         } else {
-            FillRectColor(hdc, { pad.left, pad.top + 35, rc.right - pad.right, pad.top + 36 }, 0x3C312C);
+            FillRectColor(hdc, { pad.left, pad.top + 35, rc.right - pad.right, pad.top + 36 }, theme.border);
         }
     } else {
-        FillRectColor(hdc, { pad.left, pad.top + 35, rc.right - pad.right, pad.top + 36 }, 0x3C312C);
+        FillRectColor(hdc, { pad.left, pad.top + 35, rc.right - pad.right, pad.top + 36 }, theme.border);
     }
     
     int addTabX = overflow ? tabLimit : (startX + totalW);
@@ -354,6 +354,8 @@ void PaintHeaderBar(HWND h, HDC hdc, const RECT& rc) {
     RECT pad = GetPad(h);
     FillRectColor(hdc, { 0, pad.top + 36, rc.right, pad.top + 70 }, 0x2B2521);
     FillRectColor(hdc, { pad.left, pad.top + 69, rc.right - pad.right, pad.top + 70 }, 0x3C312C);
+    FillRectColor(hdc, { 0, pad.top + 36, rc.right, pad.top + 70 }, theme.bg);
+    FillRectColor(hdc, { pad.left, pad.top + 69, rc.right - pad.right, pad.top + 70 }, theme.border);
     std::wstring pathStr = (activeTabIndex < tabs.size()) ? tabs[activeTabIndex].filePath : L"", fileName = pathStr.empty() ? L"Untitled" : GetFileName(pathStr), parentDir = L"";
     size_t lastSlash = pathStr.find_last_of(L"\\/");
     if (lastSlash != std::wstring::npos) parentDir = pathStr.substr(0, lastSlash + 1);
@@ -361,21 +363,21 @@ void PaintHeaderBar(HWND h, HDC hdc, const RECT& rc) {
     RECT rcMeasure = { 0 }; DrawTextW(hdc, fileName.c_str(), -1, &rcMeasure, DT_CALCRECT | DT_SINGLELINE);
     int fileW = rcMeasure.right - rcMeasure.left;
     RECT rcFile = { pad.left + 15, pad.top + 35, pad.left + 15 + fileW, pad.top + 70 };
-    SetTextColor(hdc, 0xFFFFFF); DrawTextW(hdc, fileName.c_str(), -1, &rcFile, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+    SetTextColor(hdc, theme.textActive); DrawTextW(hdc, fileName.c_str(), -1, &rcFile, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
     if (!parentDir.empty()) {
         RECT rcParent = { pad.left + 15 + fileW + 10, pad.top + 35, rc.right - pad.right - 320, pad.top + 70 };
-        SetTextColor(hdc, 0x858585); DrawTextW(hdc, parentDir.c_str(), -1, &rcParent, DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
+        SetTextColor(hdc, theme.textDim); DrawTextW(hdc, parentDir.c_str(), -1, &rcParent, DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
     }
     if (oldFont) SelectObject(hdc, oldFont);
 }
 
 void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     RECT pad = GetPad(h);
-    FillRectColor(hdc, { 0, 0, rc.right, 24 }, 0x1F1A18);
-    FillRectColor(hdc, { pad.left, 0, rc.right - pad.right, 1 }, 0x3C312C);
+    FillRectColor(hdc, { 0, 0, rc.right, 24 }, theme.tabBg);
+    FillRectColor(hdc, { pad.left, 0, rc.right - pad.right, 1 }, theme.border);
     DrawBtn(hdc, { pad.left, 0, pad.left + 30, 24 }, L"\uE713", hoverElement == HOVER_SETTINGS, pressedElement == HOVER_SETTINGS, false, hIconFont, false, false, false);
     DrawBtn(hdc, { pad.left + 30, 0, pad.left + 60, 24 }, L"\uE721", hoverElement == HOVER_SEARCH, pressedElement == HOVER_SEARCH, false, hIconFont, false, false, false);
-    if (searchVisible) FillRectColor(hdc, { pad.left + 30, 22, pad.left + 60, 24 }, 0xFF8B52);
+    if (searchVisible) FillRectColor(hdc, { pad.left + 30, 22, pad.left + 60, 24 }, theme.accent);
     int rightLimit = rc.right - pad.right - 10;
     int pos = hwndScintilla ? Sci(SCI_GETCURRENTPOS) : 0;
     int line = hwndScintilla ? Sci(SCI_LINEFROMPOSITION, pos) + 1 : 1;
@@ -399,7 +401,7 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     SetBkMode(hdc, TRANSPARENT);
     
     // Language
-    SetTextColor(hdc, 0xBFB2AB);
+    SetTextColor(hdc, theme.textDim);
     RECT rcLang = { 0, 1, rightLimit, 25 };
     DrawTextW(hdc, lang, -1, &rcLang, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     
@@ -408,7 +410,7 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     rightLimit -= wLang;
     
     // Divider
-    SetTextColor(hdc, 0x51443E);
+    SetTextColor(hdc, theme.border);
     RECT rcDiv1 = { 0, 1, rightLimit, 25 };
     DrawTextW(hdc, L"   |   ", -1, &rcDiv1, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     
@@ -418,7 +420,7 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     
     // EOL Format (Highlights on hover!)
     bool isEolHovered = (hoverElement == HOVER_STATUS_EOL);
-    SetTextColor(hdc, isEolHovered ? 0xFF8B52 : 0xBFB2AB);
+    SetTextColor(hdc, isEolHovered ? theme.accent : theme.textDim);
     RECT rcEol = { 0, 1, rightLimit, 25 };
     DrawTextW(hdc, eol, -1, &rcEol, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     
@@ -427,13 +429,13 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     rightLimit -= wEol;
     
     // Divider
-    SetTextColor(hdc, 0x51443E);
+    SetTextColor(hdc, theme.border);
     RECT rcDiv2 = { 0, 1, rightLimit, 25 };
     DrawTextW(hdc, L"   |   ", -1, &rcDiv2, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     rightLimit -= wDiv;
     
     // Encoding
-    SetTextColor(hdc, 0xBFB2AB);
+    SetTextColor(hdc, theme.textDim);
     RECT rcEnc = { 0, 1, rightLimit, 25 };
     DrawTextW(hdc, L"UTF-8", -1, &rcEnc, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     
@@ -442,13 +444,13 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     rightLimit -= wEnc;
     
     // Divider
-    SetTextColor(hdc, 0x51443E);
+    SetTextColor(hdc, theme.border);
     RECT rcDiv3 = { 0, 1, rightLimit, 25 };
     DrawTextW(hdc, L"   |   ", -1, &rcDiv3, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     rightLimit -= wDiv;
     
     // Position Info
-    SetTextColor(hdc, 0xBFB2AB);
+    SetTextColor(hdc, theme.textDim);
     wchar_t posInfo[128]; swprintf_s(posInfo, L"Ln %d, Col %d", line, col);
     RECT rcPos = { 0, 1, rightLimit, 25 };
     DrawTextW(hdc, posInfo, -1, &rcPos, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
@@ -488,14 +490,14 @@ void PaintSearchBar(HWND h, HDC hdc, const RECT& rc) {
     int height = replaceVisible ? (inlineReplace ? 36 : 72) : 36;
     
     // Background
-    FillRectColor(hdc, { 0, topY, rc.right, topY + height }, 0x1F1A18);
+    FillRectColor(hdc, { 0, topY, rc.right, topY + height }, theme.tabBg);
     
     // Bottom border
-    FillRectColor(hdc, { pad.left, topY + height - 1, rc.right - pad.right, topY + height }, 0x3C312C);
+    FillRectColor(hdc, { pad.left, topY + height - 1, rc.right - pad.right, topY + height }, theme.border);
     
     // Draw Border around Edit Box
     RECT rcSearchBorder = { pad.left + 8, topY + 7, pad.left + 8 + 332, topY + 7 + 22 };
-    HBRUSH hBr = CreateSolidBrush(0x51443E);
+    HBRUSH hBr = CreateSolidBrush(theme.border);
     FrameRect(hdc, &rcSearchBorder, hBr);
     DeleteObject(hBr);
     
@@ -513,7 +515,7 @@ void PaintSearchBar(HWND h, HDC hdc, const RECT& rc) {
     }
     
     if (cBuf[0] != L'\0') {
-        SetTextColor(hdc, 0x858585); // Muted gray
+        SetTextColor(hdc, theme.textDim); // Muted gray
         SetBkMode(hdc, TRANSPARENT);
         HFONT oldFont = (HFONT)SelectObject(hdc, hSmallFont);
         RECT rcCounter = { pad.left + 350, topY, pad.left + 420, topY + 36 };
@@ -548,7 +550,7 @@ void PaintSearchBar(HWND h, HDC hdc, const RECT& rc) {
         
         // Draw Border around Replace Edit Box
         RECT rcReplaceBorder = { repX, repY + 7, repX + 332, repY + 7 + 22 };
-        HBRUSH hBrRep = CreateSolidBrush(0x51443E);
+        HBRUSH hBrRep = CreateSolidBrush(theme.border);
         FrameRect(hdc, &rcReplaceBorder, hBrRep);
         DeleteObject(hBrRep);
         

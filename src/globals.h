@@ -11,6 +11,7 @@
 #include <vector>
 #include <fstream>
 #include "include/Scintilla.h"
+#include "components/theme.h"
 
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "uxtheme.lib")
@@ -85,7 +86,10 @@ struct Tab {
     std::wstring backupFile = L"";
     bool isLoaded = false;
     int eolMode = 0; // SC_EOL_CRLF
+    FILETIME lastWriteTime = {0, 0};
 };
+
+FILETIME GetFileLastWriteTime(const std::wstring& path);
 
 enum HoverElement {
     HOVER_NONE, HOVER_MINIMIZE, HOVER_MAXIMIZE, HOVER_CLOSE, HOVER_UNDO, HOVER_REDO, HOVER_ADD_TAB,

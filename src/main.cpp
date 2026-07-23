@@ -149,7 +149,7 @@ LRESULT CALLBACK ScrollbarProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         case WM_PAINT: {
             PAINTSTRUCT ps; HDC hdc = BeginPaint(hwnd, &ps);
             RECT rc; GetClientRect(hwnd, &rc);
-            FillRectColor(hdc, rc, (drag || hover) ? 0xFF8B52 : 0x51443E);
+            FillRectColor(hdc, rc, (drag || hover) ? theme.accent : theme.border);
             EndPaint(hwnd, &ps); return 0;
         }
         case WM_MOUSEMOVE: {
@@ -311,7 +311,38 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             break;
         }
         case WM_TIMER: {
-            if (wParam == 1 || wParam == 2) {
+            if (wParam == 3) {
+                if (CheckThemeUpdate() > 0) {
+                    if (hwndScintilla) ApplySyntax();
+                    InvalidateRect(hwnd, NULL, FALSE);
+                }
+                
+                std::wstring themePath = GetThemePath();
+                for (size_t i = 0; i < tabs.size(); ++i) {
+                    if (tabs[i].filePath.empty()) continue;
+                    FILETIME diskTime = GetFileLastWriteTime(tabs[i].filePath);
+                    if (diskTime.dwLowDateTime == 0 && diskTime.dwHighDateTime == 0) continue; // File deleted or inaccessible
+                    
+                    if (CompareFileTime(&diskTime, &tabs[i].lastWriteTime) > 0) {
+                        bool isTheme = !_wcsicmp(tabs[i].filePath.c_str(), themePath.c_str());
+                        if (isTheme || ShowCustomMessageBox(hwnd, L"This file has been modified outside the editor. Do you want to reload it?", L"File Modified", MB_YESNO) == IDYES) {
+                            if (i == activeTabIndex && hwndScintilla) {
+                                int pos = Sci(SCI_GETCURRENTPOS);
+                                LoadFileInActiveTab(hwnd, tabs[i].filePath.c_str());
+                                Sci(SCI_GOTOPOS, pos);
+                            } else {
+                                // Load into inactive tab
+                                size_t oldActive = activeTabIndex;
+                                SwitchToTab(hwnd, i);
+                                LoadFileInActiveTab(hwnd, tabs[i].filePath.c_str());
+                                SwitchToTab(hwnd, oldActive);
+                            }
+                        } else {
+                            tabs[i].lastWriteTime = diskTime;
+                        }
+                    }
+                }
+            } else if (wParam == 1 || wParam == 2) {
                 POINT pt; GetCursorPos(&pt); ScreenToClient(hwndScintilla, &pt);
                 RECT rc; GetClientRect(hwndScintilla, &rc);
                 bool nearV = (pt.x >= rc.right - 40 && pt.x < rc.right && pt.y >= 0 && pt.y < rc.bottom);
@@ -380,8 +411,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         case WM_CTLCOLOREDIT: {
             if ((HWND)lParam == hwndSearchEdit || (HWND)lParam == hwndReplaceEdit || (HWND)lParam == hwndTabRenameEdit) {
-                SetTextColor((HDC)wParam, 0xD4D4D4); SetBkColor((HDC)wParam, 0x2B2521);
-                static HBRUSH hbrBg = CreateSolidBrush(0x2B2521); return (INT_PTR)hbrBg;
+                SetTextColor((HDC)wParam, theme.textNormal); SetBkColor((HDC)wParam, theme.bg);
+                static HBRUSH hbrBg = NULL;
+                if (hbrBg) DeleteObject(hbrBg);
+                hbrBg = CreateSolidBrush(theme.bg); return (INT_PTR)hbrBg;
             }
             break;
         }
@@ -446,7 +479,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         case WM_MOUSELEAVE: { hoverElement = HOVER_NONE; UpdateUI(hwnd); break; }
         case WM_LBUTTONDOWN: {
-            POINT pt = { (int)(short)LOWORD(lParam), (short)HIWORD(lParam) }; pressedElement = HitTest(hwnd, pt);
+            POINT pt = { (int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam) }; pressedElement = HitTest(hwnd, pt);
             if (pressedElement >= HOVER_TAB_BASE && pressedElement < HOVER_TAB_CLOSE_BASE) {
                 RECT rc2; GetClientRect(hwnd, &rc2); RECT pad2 = GetPad(hwnd);
                 int sx = pad2.left + 70, cx = sx;
@@ -457,7 +490,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             UpdateUI(hwnd); SetCapture(hwnd); break;
         }
         case WM_LBUTTONDBLCLK: {
-            POINT pt = { (int)(short)LOWORD(lParam), (short)HIWORD(lParam) };
+            POINT pt = { (int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam) };
             HoverElement clicked = HitTest(hwnd, pt);
             if (clicked >= HOVER_TAB_BASE && clicked < HOVER_TAB_CLOSE_BASE) {
                 TriggerTabRename(hwnd, clicked - HOVER_TAB_BASE);
@@ -466,7 +499,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         case WM_LBUTTONUP: {
             if (GetCapture() == hwnd) ReleaseCapture();
-            POINT pt = { (int)(short)LOWORD(lParam), (short)HIWORD(lParam) }; HoverElement clicked = HitTest(hwnd, pt);
+            POINT pt = { (int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam) }; HoverElement clicked = HitTest(hwnd, pt);
             if (clicked == pressedElement && pressedElement != HOVER_NONE) OnElementClicked(hwnd, pressedElement);
             pressedElement = HOVER_NONE;
             POINT pt2; GetCursorPos(&pt2); ScreenToClient(hwnd, &pt2);
@@ -474,7 +507,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             UpdateUI(hwnd); break;
         }
         case WM_MBUTTONUP: {
-            POINT pt = { (int)(short)LOWORD(lParam), (short)HIWORD(lParam) };
+            POINT pt = { (int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam) };
             HoverElement clicked = HitTest(hwnd, pt);
             if (clicked >= HOVER_TAB_BASE && clicked < HOVER_TAB_CLOSE_BASE) {
                 CloseTab(hwnd, clicked - HOVER_TAB_BASE);
@@ -498,18 +531,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 offset = replaceVisible ? (inlineReplace ? 36 : 72) : 36;
             }
             RECT rcTopGap = { pad.left, pad.top + topBarH + offset, rc.right - pad.right, pad.top + topBarH + offset + EDITOR_TOP_MARGIN };
-            FillRectColor(memDC, rcTopGap, 0x2B2521);
+            FillRectColor(memDC, rcTopGap, theme.editorBg);
             POINT oldOrg; SetWindowOrgEx(memDC, 0, -(rc.bottom - pad.bottom - 24), &oldOrg);
             PaintStatusBar(hwnd, memDC, rc); SetWindowOrgEx(memDC, oldOrg.x, oldOrg.y, NULL);
-            if (pad.left > 1) FillRectColor(memDC, { 0, pad.top + topBarH + offset, pad.left, rc.bottom - pad.bottom - 24 }, 0x2B2521);
-            if (pad.right > 1) FillRectColor(memDC, { rc.right - pad.right, pad.top + topBarH + offset, rc.right, rc.bottom - pad.bottom - 24 }, 0x2B2521);
-            if (pad.bottom > 1) FillRectColor(memDC, { 0, rc.bottom - pad.bottom, rc.right, rc.bottom }, 0x1F1A18);
+            if (pad.left > 1) FillRectColor(memDC, { 0, pad.top + topBarH + offset, pad.left, rc.bottom - pad.bottom - 24 }, theme.editorBg);
+            if (pad.right > 1) FillRectColor(memDC, { rc.right - pad.right, pad.top + topBarH + offset, rc.right, rc.bottom - pad.bottom - 24 }, theme.editorBg);
+            if (pad.bottom > 1) FillRectColor(memDC, { 0, rc.bottom - pad.bottom, rc.right, rc.bottom }, theme.tabBg);
             
-            FillRectColor(memDC, { 0, 0, rc.right, 1 }, 0x3C312C);
+            FillRectColor(memDC, { 0, 0, rc.right, 1 }, theme.border);
             if (!IsZoomed(hwnd)) {
-                FillRectColor(memDC, { 0, rc.bottom - 1, rc.right, rc.bottom }, 0x3C312C); 
-                FillRectColor(memDC, { 0, 0, 1, rc.bottom }, 0x3C312C);              
-                FillRectColor(memDC, { rc.right - 1, 0, rc.right, rc.bottom }, 0x3C312C); 
+                FillRectColor(memDC, { 0, rc.bottom - 1, rc.right, rc.bottom }, theme.border); 
+                FillRectColor(memDC, { 0, 0, 1, rc.bottom }, theme.border);              
+                FillRectColor(memDC, { rc.right - 1, 0, rc.right, rc.bottom }, theme.border); 
             }
             
             BitBlt(hdc, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left, ps.rcPaint.bottom - ps.rcPaint.top, memDC, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
@@ -710,6 +743,7 @@ void CleanupUserChoiceAssociations() {
 }
 
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nCmd) {
+    LoadTheme();
     CleanupUserChoiceAssociations();
     SetProcessDPIAware();
     LoadFonts();
@@ -730,6 +764,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nCmd) {
         UnloadFonts();
         return 0;
     }
+    SetTimer(hwnd, 3, 1000, NULL);
     ShowWindow(hwnd, nCmd);
     
     int argc = 0;

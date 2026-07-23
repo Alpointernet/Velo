@@ -2,6 +2,8 @@
 #include "dialogs.h"
 #include "editor.h"
 #include "ui_drawing.h"
+#include "tabmanager.h"
+#include "theme.h"
 
 LRESULT CALLBACK CustomDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     CustomDialogData* data = (CustomDialogData*)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
@@ -516,6 +518,7 @@ struct CustomSettingsData {
     int hoveredIndex;
     int pressedIndex;
     bool running;
+    bool openThemeFile;
     std::vector<SettingsControlBtn> buttons;
 };
 
@@ -582,6 +585,9 @@ LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
 
             RECT rcLblTopBar = { 20, 260, 200, 290 };
             DrawTextW(memDC, L"File Top Bar", -1, &rcLblTopBar, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+            
+            RECT rcLblTheme = { 20, 310, 200, 340 };
+            DrawTextW(memDC, L"Custom Theme", -1, &rcLblTheme, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
             
             // Draw Control Buttons
             SelectObject(memDC, hUIFont ? hUIFont : (HFONT)GetStockObject(DEFAULT_GUI_FONT));
@@ -694,6 +700,7 @@ LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 else if (btn.settingType == 3) { data->tempShowWhitespace = (btn.value == 1); showWhitespace = data->tempShowWhitespace; updated = true; }
                 else if (btn.settingType == 4) { data->tempCaretStyleBlock = (btn.value == 1); caretStyleBlock = data->tempCaretStyleBlock; updated = true; }
                 else if (btn.settingType == 5) { data->tempShowTopBar = (btn.value == 1); showTopBar = data->tempShowTopBar; updated = true; }
+                else if (btn.settingType == 7) { data->openThemeFile = true; data->running = false; } // Open Theme
                 else if (btn.settingType == 6) data->running = false; // OK
                 
                 if (updated) {
@@ -744,6 +751,7 @@ void ShowSettingsDialog(HWND hwndParent) {
     data.hoveredIndex = -1;
     data.pressedIndex = -1;
     data.running = true;
+    data.openThemeFile = false;
     
     data.buttons = {
         // Auto-Close Braces
@@ -766,11 +774,14 @@ void ShowSettingsDialog(HWND hwndParent) {
         { { 210, 260, 290, 288 }, L"Visible", 5, 1 },
         { { 300, 260, 380, 288 }, L"Hidden", 5, 0 },
         
+        // Custom Theme
+        { { 210, 310, 380, 338 }, L"Open theme.json", 7, 0 },
+        
         // OK Button
-        { { 150, 320, 250, 355 }, L"OK", 6, 0 }
+        { { 150, 370, 250, 405 }, L"OK", 6, 0 }
     };
     
-    int dlgW = 400, dlgH = 380;
+    int dlgW = 400, dlgH = 430;
     int x = CW_USEDEFAULT, y = CW_USEDEFAULT;
     if (hwndParent) {
         RECT rcParent;
@@ -824,4 +835,24 @@ void ShowSettingsDialog(HWND hwndParent) {
         UpdateUI(hwndParent);
     }
     SaveSession();
+    
+    if (data.openThemeFile) {
+        std::wstring themePath = GetThemePath();
+        bool found = false;
+        for (size_t i = 0; i < tabs.size(); ++i) {
+            if (!_wcsicmp(tabs[i].filePath.c_str(), themePath.c_str())) {
+                SwitchToTab(hwndParent, i);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            if (tabs[activeTabIndex].filePath.empty() && Sci(SCI_GETLENGTH) == 0 && !tabs[activeTabIndex].isModified) {
+                LoadFileInActiveTab(hwndParent, themePath.c_str());
+            } else {
+                CreateNewTab(hwndParent, themePath);
+                LoadFileInActiveTab(hwndParent, themePath.c_str());
+            }
+        }
+    }
 }

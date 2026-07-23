@@ -131,7 +131,7 @@ void SwitchToTab(HWND h, size_t idx) {
 }
 
 void CreateNewTab(HWND h, std::wstring path) {
-    tabs.push_back({ path, path.empty() ? L"Untitled" : GetFileName(path), Sci(SCI_CREATEDOCUMENT), false, L"", true });
+    tabs.push_back({ path, path.empty() ? L"Untitled" : GetFileName(path), Sci(SCI_CREATEDOCUMENT), false, L"", true, 0, GetFileLastWriteTime(path) });
     SwitchToTab(h, tabs.size() - 1); Sci(SCI_EMPTYUNDOBUFFER);
     SaveSession();
 }
@@ -173,6 +173,16 @@ bool SaveModifiedTabs(HWND h) {
     return true;
 }
 
+FILETIME GetFileLastWriteTime(const std::wstring& path) {
+    FILETIME ft = {0, 0};
+    HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    if (hFile != INVALID_HANDLE_VALUE) {
+        GetFileTime(hFile, NULL, NULL, &ft);
+        CloseHandle(hFile);
+    }
+    return ft;
+}
+
 void LoadFileInActiveTab(HWND h, const wchar_t* path) {
     HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
     if (hFile != INVALID_HANDLE_VALUE) {
@@ -180,7 +190,7 @@ void LoadFileInActiveTab(HWND h, const wchar_t* path) {
         if (ReadFile(hFile, buf.data(), size, &read, NULL)) {
             Sci(SCI_CLEARALL); Sci(SCI_APPENDTEXT, read, (LPARAM)buf.data());
             Sci(SCI_SETSAVEPOINT); Sci(SCI_EMPTYUNDOBUFFER);
-            tabs[activeTabIndex] = { path, GetFileName(path), tabs[activeTabIndex].docPointer, false, L"", true };
+            tabs[activeTabIndex] = { path, GetFileName(path), tabs[activeTabIndex].docPointer, false, L"", true, 0, GetFileLastWriteTime(path) };
             activeLineStart = -1; activeLineEnd = -1; ApplySyntax(); SyncLineNumbers(true);
             RecalculateScrollWidth();
             if (searchVisible) UpdateSearchMatches();
@@ -189,7 +199,7 @@ void LoadFileInActiveTab(HWND h, const wchar_t* path) {
         }
         CloseHandle(hFile);
     } else {
-        tabs[activeTabIndex] = { path, GetFileName(path), tabs[activeTabIndex].docPointer, false, L"", true };
+        tabs[activeTabIndex] = { path, GetFileName(path), tabs[activeTabIndex].docPointer, false, L"", true, 0, GetFileLastWriteTime(path) };
         Sci(SCI_CLEARALL); Sci(SCI_SETSAVEPOINT); Sci(SCI_EMPTYUNDOBUFFER);
         activeLineStart = -1; activeLineEnd = -1; ApplySyntax(); SyncLineNumbers(true);
         UpdateUI(h);
@@ -221,6 +231,7 @@ void DoFileSave(HWND h) {
     if (hFile != INVALID_HANDLE_VALUE) {
         int len = Sci(SCI_GETLENGTH); std::vector<char> buf(len + 1, 0); Sci(SCI_GETTEXT, len + 1, (LPARAM)buf.data());
         DWORD written; WriteFile(hFile, buf.data(), len, &written, NULL); CloseHandle(hFile);
+        tabs[activeTabIndex].lastWriteTime = GetFileLastWriteTime(tabs[activeTabIndex].filePath);
         Sci(SCI_SETSAVEPOINT); tabs[activeTabIndex].isModified = false; ApplySyntax(); UpdateUI(h);
         SaveSession();
     }
@@ -514,7 +525,7 @@ void LoadSession(HWND hwndParent) {
             std::wstring backup = tabBackups[i];
             bool modified = tabModifieds[i] || !backup.empty();
             int eol = tabEols[i];
-            tabs.push_back({ path, title, doc, modified, backup, false, eol });
+            tabs.push_back({ path, title, doc, modified, backup, false, eol, GetFileLastWriteTime(path) });
         }
         
         isSavingSession = false;
