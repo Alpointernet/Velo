@@ -46,6 +46,8 @@ begin
   AppPath := ExpandConstant('{app}\Velo.exe');
   RegWriteStringValue(HKEY_CLASSES_ROOT, 'Applications\Velo.exe\shell\open\command', '', '"' + AppPath + '" "%1"');
   RegWriteStringValue(HKEY_CLASSES_ROOT, 'Applications\Velo.exe', 'FriendlyAppName', 'Velo');
+  RegWriteStringValue(HKEY_CLASSES_ROOT, 'Applications\Velo.exe\DefaultIcon', '', ExpandConstant('{app}\icon\papirus\_page.ico'));
+  RegWriteStringValue(HKEY_CLASSES_ROOT, 'Velo.Document\DefaultIcon', '', ExpandConstant('{app}\icon\papirus\_page.ico'));
 end;
 
 procedure UnregisterProgID();
@@ -88,7 +90,7 @@ begin
   end;
 
   ProgID := 'Velo' + Ext;
-  RegWriteStringValue(HKEY_CLASSES_ROOT, ProgID, '', 'Velo ' + UpperCase(Copy(Ext, 2, Length(Ext) - 1)) + ' Document');
+  RegWriteStringValue(HKEY_CLASSES_ROOT, ProgID, '', UpperCase(Copy(Ext, 2, Length(Ext) - 1)) + ' Document');
   RegWriteStringValue(HKEY_CLASSES_ROOT, ProgID + '\shell\open\command', '', '"' + ExpandConstant('{app}\Velo.exe') + '" "%1"');
 
   if (Ext = '.txt') or (Ext = '.log') then

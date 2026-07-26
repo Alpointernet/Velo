@@ -22,5 +22,6 @@ void SearchPrev();
 void SearchSelectAll();
 void SearchReplace();
 void SearchReplaceAll();
+void UpdateBraceMatch();
 
 #endif // EDITOR_H

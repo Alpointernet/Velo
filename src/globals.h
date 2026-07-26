@@ -24,6 +24,7 @@
 #define SCLEX_PYTHON 2
 #define SCLEX_CPP 3
 #define SCLEX_HTML 4
+#define SCLEX_CSS 38
 #define SCLEX_MARKDOWN 84
 #define SCE_MARKDOWN_DEFAULT 0
 #define SCE_MARKDOWN_LINE_BEGIN 1
@@ -76,6 +77,8 @@
 #define IDM_TOGGLE_LINES 3002
 #define IDM_SETTINGS_DIALOG 3003
 #define IDM_TOGGLE_TOPBAR 3004
+#define IDM_RUN_FILE 5001
+#define IDM_LANG_BASE 4000
 #define CUSTOM_SB_SIZE 10
 #define EDITOR_TOP_MARGIN 6
 
@@ -87,6 +90,7 @@ struct Tab {
     bool isLoaded = false;
     int eolMode = 0; // SC_EOL_CRLF
     FILETIME lastWriteTime = {0, 0};
+    std::string manualLanguage = ""; // empty = auto-detect from extension
 };
 
 FILETIME GetFileLastWriteTime(const std::wstring& path);
@@ -96,7 +100,7 @@ enum HoverElement {
     HOVER_TAB_BASE, HOVER_TAB_CLOSE_BASE = 100, HOVER_SETTINGS = 200, HOVER_SEARCH,
     HOVER_SEARCH_PREV, HOVER_SEARCH_NEXT, HOVER_SEARCH_SELECT_ALL, HOVER_SEARCH_REPLACE_TOGGLE,
     HOVER_SEARCH_CLOSE, HOVER_REPLACE_NEXT, HOVER_REPLACE_ALL,
-    HOVER_STATUS_EOL
+    HOVER_STATUS_EOL, HOVER_STATUS_LANG
 };
 
 struct DlgButton {

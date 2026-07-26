@@ -13,6 +13,7 @@ void SyncScrollbars();
 void ShowScrollbars(HWND h);
 void ApplyDarkMode(HWND hwnd);
 void TriggerSettingsMenu(HWND h);
+void TriggerLanguagePicker(HWND h);
 void TriggerSearchDialog(HWND h);
 HoverElement HitTest(HWND h, POINT pt);
 void OnElementClicked(HWND h, HoverElement el);

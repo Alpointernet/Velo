@@ -59,9 +59,14 @@ void SyncScrollbars() {
     }
     
     int vPos = Sci(SCI_GETFIRSTVISIBLELINE);
-
+    int hPos = Sci(SCI_GETXOFFSET);
+    int hTotal = Sci(SCI_GETSCROLLWIDTH);
     bool needV = (vTotal > vVis);
-    bool needH = (Sci(SCI_GETSCROLLWIDTH) > hVis);
+    bool needH = (hTotal > hVis);
+
+    static int lastVPos = -1, lastHPos = -1, lastSciW = -1, lastSciH = -1;
+    if (vPos == lastVPos && hPos == lastHPos && rcSci.right == lastSciW && rcSci.bottom == lastSciH) return;
+    lastVPos = vPos; lastHPos = hPos; lastSciW = rcSci.right; lastSciH = rcSci.bottom;
 
     if (needV) {
         int trackLen = rcSci.bottom - (needH ? CUSTOM_SB_SIZE : 0) - 4;
@@ -72,8 +77,6 @@ void SyncScrollbars() {
     } else ShowWindow(hwndVScroll, SW_HIDE);
 
     if (needH) {
-        int hTotal = Sci(SCI_GETSCROLLWIDTH);
-        int hPos = Sci(SCI_GETXOFFSET);
         int trackLen = hVis - (needV ? CUSTOM_SB_SIZE : 0) - 4; 
         int thumbLen = max(20, (int)((double)hVis / hTotal * trackLen));
         int mScroll = hTotal - hVis;
@@ -98,6 +101,52 @@ void ApplyDarkMode(HWND hwnd) {
     }
 }
 
+static const wchar_t* GetLanguageName() {
+    if (activeTabIndex >= tabs.size()) return L"Plain Text";
+    std::string manualLang = tabs[activeTabIndex].manualLanguage;
+    if (!manualLang.empty()) {
+        if (manualLang == "cpp") return L"C++";
+        if (manualLang == "python") return L"Python";
+        if (manualLang == "hypertext") return L"HTML";
+        if (manualLang == "css") return L"CSS";
+        if (manualLang == "markdown") return L"Markdown";
+        if (manualLang == "null") return L"Plain Text";
+    }
+    std::wstring fp = tabs[activeTabIndex].filePath;
+    size_t dot = fp.find_last_of(L'.');
+    if (dot == std::wstring::npos) return L"Plain Text";
+    std::wstring e = fp.substr(dot + 1);
+    if (!_wcsicmp(e.c_str(), L"cpp") || !_wcsicmp(e.c_str(), L"cc") || !_wcsicmp(e.c_str(), L"h") || !_wcsicmp(e.c_str(), L"hpp")) return L"C++";
+    if (!_wcsicmp(e.c_str(), L"c")) return L"C";
+    if (!_wcsicmp(e.c_str(), L"cs")) return L"C#";
+    if (!_wcsicmp(e.c_str(), L"py")) return L"Python";
+    if (!_wcsicmp(e.c_str(), L"js") || !_wcsicmp(e.c_str(), L"jsx")) return L"JavaScript";
+    if (!_wcsicmp(e.c_str(), L"ts") || !_wcsicmp(e.c_str(), L"tsx")) return L"TypeScript";
+    if (!_wcsicmp(e.c_str(), L"html") || !_wcsicmp(e.c_str(), L"htm")) return L"HTML";
+    if (!_wcsicmp(e.c_str(), L"xml")) return L"XML";
+    if (!_wcsicmp(e.c_str(), L"css")) return L"CSS";
+    if (!_wcsicmp(e.c_str(), L"scss")) return L"SCSS";
+    if (!_wcsicmp(e.c_str(), L"json") || !_wcsicmp(e.c_str(), L"jsonc")) return L"JSON";
+    if (!_wcsicmp(e.c_str(), L"md") || !_wcsicmp(e.c_str(), L"markdown")) return L"Markdown";
+    if (!_wcsicmp(e.c_str(), L"java")) return L"Java";
+    if (!_wcsicmp(e.c_str(), L"go")) return L"Go";
+    if (!_wcsicmp(e.c_str(), L"rs")) return L"Rust";
+    if (!_wcsicmp(e.c_str(), L"rb")) return L"Ruby";
+    if (!_wcsicmp(e.c_str(), L"sql")) return L"SQL";
+    if (!_wcsicmp(e.c_str(), L"yaml") || !_wcsicmp(e.c_str(), L"yml")) return L"YAML";
+    if (!_wcsicmp(e.c_str(), L"toml")) return L"TOML";
+    if (!_wcsicmp(e.c_str(), L"ini") || !_wcsicmp(e.c_str(), L"cfg") || !_wcsicmp(e.c_str(), L"conf") || !_wcsicmp(e.c_str(), L"config")) return L"INI";
+    if (!_wcsicmp(e.c_str(), L"env")) return L"ENV";
+    if (!_wcsicmp(e.c_str(), L"bat") || !_wcsicmp(e.c_str(), L"cmd")) return L"Batch";
+    if (!_wcsicmp(e.c_str(), L"ps1")) return L"PowerShell";
+    if (!_wcsicmp(e.c_str(), L"sh")) return L"Shell";
+    if (!_wcsicmp(e.c_str(), L"ahk")) return L"AutoHotkey";
+    if (!_wcsicmp(e.c_str(), L"rc")) return L"Resource";
+    if (!_wcsicmp(e.c_str(), L"iss")) return L"Inno Setup";
+    if (!_wcsicmp(e.c_str(), L"txt") || !_wcsicmp(e.c_str(), L"log")) return L"Plain Text";
+    return L"Plain Text";
+}
+
 RECT GetEolRect(HWND h, HDC hdc, const RECT& rc) {
     RECT pad = GetPad(h);
     int pos = hwndScintilla ? Sci(SCI_GETCURRENTPOS) : 0;
@@ -105,19 +154,7 @@ RECT GetEolRect(HWND h, HDC hdc, const RECT& rc) {
     int col = hwndScintilla ? Sci(SCI_GETCOLUMN, pos) + 1 : 1;
     int eolMode = hwndScintilla ? Sci(SCI_GETEOLMODE) : 0;
     const wchar_t* eol = (eolMode == SC_EOL_CRLF) ? L"CRLF" : ((eolMode == SC_EOL_CR) ? L"CR" : L"LF");
-    const wchar_t* lang = L"Plain Text";
-    if (activeTabIndex < tabs.size()) {
-        std::wstring ext = tabs[activeTabIndex].filePath; size_t dot = ext.find_last_of(L'.');
-        if (dot != std::wstring::npos) {
-            std::wstring e = ext.substr(dot + 1);
-            if (!_wcsicmp(e.c_str(), L"cpp") || !_wcsicmp(e.c_str(), L"h") || !_wcsicmp(e.c_str(), L"hpp") || !_wcsicmp(e.c_str(), L"c")) lang = L"C++";
-            else if (!_wcsicmp(e.c_str(), L"py")) lang = L"Python";
-            else if (!_wcsicmp(e.c_str(), L"js") || !_wcsicmp(e.c_str(), L"ts")) lang = L"JavaScript";
-            else if (!_wcsicmp(e.c_str(), L"html") || !_wcsicmp(e.c_str(), L"htm") || (!_wcsicmp(e.c_str(), L"xml"))) lang = L"HTML";
-            else if (!_wcsicmp(e.c_str(), L"json")) lang = L"JSON";
-            else if (!_wcsicmp(e.c_str(), L"md") || !_wcsicmp(e.c_str(), L"markdown")) lang = L"Markdown";
-        }
-    }
+    const wchar_t* lang = GetLanguageName();
     HFONT oldFont = hSmallFont ? (HFONT)SelectObject(hdc, hSmallFont) : NULL;
     RECT rcLangMeasure = { 0 }; DrawTextW(hdc, lang, -1, &rcLangMeasure, DT_CALCRECT | DT_SINGLELINE);
     int wLang = rcLangMeasure.right - rcLangMeasure.left;
@@ -130,6 +167,19 @@ RECT GetEolRect(HWND h, HDC hdc, const RECT& rc) {
     int eolRight = rightLimit - wLang - wDiv;
     int eolLeft = eolRight - wEol;
     return { eolLeft, 0, eolRight, 24 };
+}
+
+RECT GetLangRect(HWND h, HDC hdc, const RECT& rc) {
+    RECT pad = GetPad(h);
+    const wchar_t* lang = GetLanguageName();
+    HFONT oldFont = hSmallFont ? (HFONT)SelectObject(hdc, hSmallFont) : NULL;
+    RECT rcLangMeasure = { 0 }; DrawTextW(hdc, lang, -1, &rcLangMeasure, DT_CALCRECT | DT_SINGLELINE);
+    int wLang = rcLangMeasure.right - rcLangMeasure.left;
+    if (oldFont) SelectObject(hdc, oldFont);
+    int rightLimit = rc.right - pad.right - 10;
+    int langRight = rightLimit;
+    int langLeft = langRight - wLang;
+    return { langLeft, 0, langRight, 24 };
 }
 
 HoverElement HitTest(HWND h, POINT pt) {
@@ -171,11 +221,15 @@ HoverElement HitTest(HWND h, POINT pt) {
         if (hwndScintilla) {
             HDC hdc = GetDC(h);
             RECT rcEol = GetEolRect(h, hdc, rc);
+            RECT rcLang = GetLangRect(h, hdc, rc);
             ReleaseDC(h, hdc);
             
             int sbTop = rc.bottom - pad.bottom - 24;
             if (pt.x >= rcEol.left && pt.x < rcEol.right && pt.y >= sbTop && pt.y < sbTop + 24) {
                 return HOVER_STATUS_EOL;
+            }
+            if (pt.x >= rcLang.left && pt.x < rcLang.right && pt.y >= sbTop && pt.y < sbTop + 24) {
+                return HOVER_STATUS_LANG;
             }
         }
     }
@@ -384,24 +438,13 @@ void PaintStatusBar(HWND h, HDC hdc, const RECT& rc) {
     int col = hwndScintilla ? Sci(SCI_GETCOLUMN, pos) + 1 : 1;
     int eolMode = hwndScintilla ? Sci(SCI_GETEOLMODE) : 0;
     const wchar_t* eol = (eolMode == SC_EOL_CRLF) ? L"CRLF" : ((eolMode == SC_EOL_CR) ? L"CR" : L"LF");
-    const wchar_t* lang = L"Plain Text";
-    if (activeTabIndex < tabs.size()) {
-        std::wstring ext = tabs[activeTabIndex].filePath; size_t dot = ext.find_last_of(L'.');
-        if (dot != std::wstring::npos) {
-            std::wstring e = ext.substr(dot + 1);
-            if (!_wcsicmp(e.c_str(), L"cpp") || !_wcsicmp(e.c_str(), L"h") || !_wcsicmp(e.c_str(), L"hpp") || !_wcsicmp(e.c_str(), L"c")) lang = L"C++";
-            else if (!_wcsicmp(e.c_str(), L"py")) lang = L"Python";
-            else if (!_wcsicmp(e.c_str(), L"js") || !_wcsicmp(e.c_str(), L"ts")) lang = L"JavaScript";
-            else if (!_wcsicmp(e.c_str(), L"html") || !_wcsicmp(e.c_str(), L"htm") || !_wcsicmp(e.c_str(), L"xml")) lang = L"HTML";
-            else if (!_wcsicmp(e.c_str(), L"json")) lang = L"JSON";
-            else if (!_wcsicmp(e.c_str(), L"md") || !_wcsicmp(e.c_str(), L"markdown")) lang = L"Markdown";
-        }
-    }
+    const wchar_t* lang = GetLanguageName();
     HFONT oldFont = hSmallFont ? (HFONT)SelectObject(hdc, hSmallFont) : NULL;
     SetBkMode(hdc, TRANSPARENT);
     
     // Language
-    SetTextColor(hdc, theme.textDim);
+    bool isLangHovered = (hoverElement == HOVER_STATUS_LANG);
+    SetTextColor(hdc, isLangHovered ? theme.accent : theme.textDim);
     RECT rcLang = { 0, 1, rightLimit, 25 };
     DrawTextW(hdc, lang, -1, &rcLang, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
     
@@ -480,6 +523,77 @@ void TriggerSettingsMenu(HWND h) {
     int selectedId = ShowCustomPopupMenu(h, pt.x, pt.y, items, true);
     if (selectedId != 0) {
         PostMessageW(h, WM_COMMAND, MAKEWPARAM(selectedId, 0), 0);
+    }
+}
+
+void TriggerLanguagePicker(HWND h) {
+    const wchar_t* langNames[] = {
+        L"Auto Detect",
+        L"AutoHotkey",
+        L"Batch",
+        L"C", L"C#", L"C++",
+        L"CSS",
+        L"ENV",
+        L"Go",
+        L"HTML",
+        L"INI", L"Inno Setup",
+        L"Java", L"JavaScript", L"JSON",
+        L"Markdown",
+        L"Plain Text",
+        L"PowerShell", L"Python",
+        L"Resource", L"Ruby", L"Rust",
+        L"SCSS", L"Shell", L"SQL",
+        L"TOML", L"TypeScript",
+        L"XML",
+        L"YAML"
+    };
+    const char* langIds[] = {
+        "",
+        "cpp",
+        "cpp",
+        "cpp", "cpp", "cpp",
+        "css",
+        "cpp",
+        "cpp",
+        "hypertext",
+        "cpp", "cpp",
+        "cpp", "cpp", "cpp",
+        "markdown",
+        "null",
+        "cpp", "python",
+        "cpp", "cpp", "cpp",
+        "css", "cpp", "cpp",
+        "cpp", "cpp",
+        "hypertext",
+        "cpp"
+    };
+    int numLangs = sizeof(langNames) / sizeof(langNames[0]);
+
+    std::string currentLang = "";
+    if (activeTabIndex < tabs.size()) {
+        currentLang = tabs[activeTabIndex].manualLanguage;
+    }
+
+    std::vector<PopupMenuItem> items;
+    for (int i = 0; i < numLangs; ++i) {
+        bool isChecked = (i == 0 && currentLang.empty()) || (!currentLang.empty() && currentLang == langIds[i] && i > 0);
+        if (i == 0 && !currentLang.empty()) isChecked = false;
+        items.push_back({ langNames[i], IDM_LANG_BASE + i, false, isChecked, L"" });
+    }
+
+    RECT rc; GetClientRect(h, &rc);
+    POINT pt = { rc.right - 10, rc.bottom - 24 };
+    ClientToScreen(h, &pt);
+
+    int selectedId = ShowCustomPopupMenu(h, pt.x, pt.y, items, true);
+    if (selectedId >= IDM_LANG_BASE && selectedId < IDM_LANG_BASE + numLangs) {
+        int idx = selectedId - IDM_LANG_BASE;
+        if (activeTabIndex < tabs.size()) {
+            tabs[activeTabIndex].manualLanguage = langIds[idx];
+            ApplySyntax();
+            UpdateUI(h);
+            InvalidateRect(h, NULL, FALSE);
+        }
     }
 }
 
@@ -606,6 +720,9 @@ void OnElementClicked(HWND h, HoverElement el) {
         SyncLineNumbers(true);
         SaveSession();
         UpdateUI(h);
+    }
+    else if (el == HOVER_STATUS_LANG) {
+        TriggerLanguagePicker(h);
     }
     else if (el == HOVER_SEARCH_PREV) SearchPrev();
     else if (el == HOVER_SEARCH_NEXT) SearchNext();
