@@ -36,6 +36,8 @@ Most text editors are either too simple or too bloated, which makes it harder to
 | `Ctrl+F` | Open/Close inline find |
 | `Ctrl+Tab` | Next tab |
 | `Ctrl+Shift+Tab` | Previous tab |
+| `Shift+F5` | Launch file |
+
 
 ## Building & Installation
 
