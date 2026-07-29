@@ -16,7 +16,7 @@
 
 Most text editors are either too simple or too bloated, which makes it harder to get the best experience. Velo comes great out of the box, as simple is better.
 
-- **Lightweight:** Opens the second you click it, and consumes very little memory.
+- **Lightweight:** Launches the second you click it, and consumes very little memory.
 - **Functional:** Has tabs, search and replace tools.  
 - **Clean Aesthetic:** Every interface element is intentional, and you can make your own themes easily.
 - **Typographic Clarity:** Uses different fonts for editing and the GUI.
