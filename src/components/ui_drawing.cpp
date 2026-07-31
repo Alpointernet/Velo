@@ -3,6 +3,7 @@
 #include "editor.h"
 #include "tabmanager.h"
 #include "dialogs.h"
+#include "animations.h"
 
 extern int tabRenameIndex;
 extern HWND hwndTabRenameEdit;
@@ -12,6 +13,7 @@ void FillRectColor(HDC hdc, const RECT& rc, COLORREF color) {
 }
 
 RECT GetPad(HWND h) {
+    if (zenMode) return { 0, 0, 0, 0 };
     if (!IsZoomed(h)) return { 1, 0, 1, 1 };
     RECT rc; GetWindowRect(h, &rc);
     MONITORINFO mi = { sizeof(mi) }; GetMonitorInfoW(MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST), &mi);
@@ -22,8 +24,17 @@ void UpdateUI(HWND h) {
     RECT rc; GetClientRect(h, &rc); RECT pad = GetPad(h);
     bool inlineReplace = (rc.right - pad.right - pad.left > 1230);
     int offset = searchVisible ? (replaceVisible ? (inlineReplace ? 36 : 72) : 36) : 0;
-    int topBarH = showTopBar ? 70 : 36;
-    RECT rcTop = { 0, 0, rc.right, pad.top + topBarH + EDITOR_TOP_MARGIN + offset }, rcStatus = { 0, rc.bottom - pad.bottom - 24, rc.right, rc.bottom };
+    int fullTopBarH = showTopBar ? 70 : 36;
+    int topBarH = fullTopBarH;
+    if (zenMode) topBarH = (int)(fullTopBarH * zenTopProgress + 0.5f);
+    int topH = pad.top + topBarH + (zenMode && zenTopProgress < 0.001f ? 0 : EDITOR_TOP_MARGIN) + offset;
+    RECT rcTop = { 0, 0, rc.right, topH };
+    
+    int fullBottomBarH = 24;
+    int bottomBarH = fullBottomBarH;
+    if (zenMode) bottomBarH = (int)(fullBottomBarH * zenBottomProgress + 0.5f);
+    RECT rcStatus = { 0, rc.bottom - pad.bottom - bottomBarH, rc.right, rc.bottom };
+    
     InvalidateRect(h, &rcTop, FALSE); InvalidateRect(h, &rcStatus, FALSE);
     std::wstring title = (tabs[activeTabIndex].filePath.empty() ? L"Untitled" : tabs[activeTabIndex].filePath) + (tabs[activeTabIndex].isModified ? L"*" : L"") + L" - Velo";
     static std::wstring lastTitle = L"";
@@ -44,8 +55,10 @@ void SyncScrollbars() {
     
     int offset = 0;
     if (searchVisible) offset = replaceVisible ? (isInline ? 36 : 72) : 36;
-    int topBarH = showTopBar ? 70 : 36;
-    int sciX = pad.left, sciY = pad.top + topBarH + offset + EDITOR_TOP_MARGIN;
+    int fullTopBarH = showTopBar ? 70 : 36;
+    int topBarH = fullTopBarH;
+    if (zenMode) topBarH = (int)(fullTopBarH * zenTopProgress + 0.5f);
+    int sciX = pad.left, sciY = pad.top + topBarH + offset + (zenMode && zenTopProgress < 0.001f ? 0 : EDITOR_TOP_MARGIN);
 
     int marginW = GetTotalMarginWidth(); 
     int vLineH = Sci(SCI_TEXTHEIGHT);
@@ -184,52 +197,104 @@ RECT GetLangRect(HWND h, HDC hdc, const RECT& rc) {
 
 HoverElement HitTest(HWND h, POINT pt) {
     RECT rc; GetClientRect(h, &rc); RECT pad = GetPad(h);
-    if (pt.y >= pad.top && pt.y < pad.top + 35) {
-        if (pt.x >= rc.right - pad.right - 45 && pt.x < rc.right - pad.right) return HOVER_CLOSE;
-        if (pt.x >= rc.right - pad.right - 90 && pt.x < rc.right - pad.right - 45) return HOVER_MAXIMIZE;
-        if (pt.x >= rc.right - pad.right - 135 && pt.x < rc.right - pad.right - 90) return HOVER_MINIMIZE;
-        if (pt.x >= pad.left + 10 && pt.x < pad.left + 35) return Sci(SCI_CANUNDO) ? HOVER_UNDO : HOVER_NONE;
-        if (pt.x >= pad.left + 35 && pt.x < pad.left + 60) return Sci(SCI_CANREDO) ? HOVER_REDO : HOVER_NONE;
-        
-        int totalW = 0;
-        for (size_t i = 0; i < tabs.size(); ++i) {
-            totalW += GetTabWidth(i);
-        }
-        int startX = pad.left + 70;
-        int maxTabRight = rc.right - pad.right - 135;
-        bool overflow = (startX + totalW > maxTabRight);
-        int tabLimit = overflow ? (maxTabRight - 30) : maxTabRight;
-        
-        int curX = startX;
-        for (size_t i = 0; i < tabs.size(); ++i) {
-            int tabW = GetTabWidth(i);
-            if (curX >= tabLimit) break;
-            if (pt.x >= curX && pt.x < curX + tabW) {
-                if (pt.x >= tabLimit) break;
-                if (pt.x >= curX + tabW - 25 && pt.x < curX + tabW - 5 && pt.y >= pad.top + 8 && pt.y < pad.top + 28) return (HoverElement)(HOVER_TAB_CLOSE_BASE + i);
-                return (HoverElement)(HOVER_TAB_BASE + i);
-            }
-            curX += tabW;
-        }
-        int addTabX = overflow ? tabLimit : (startX + totalW);
-        if (pt.x >= addTabX && pt.x < addTabX + 30) return HOVER_ADD_TAB;
-    }
-    if (pt.y >= rc.bottom - 24 && pt.y < rc.bottom) {
-        if (pt.x >= pad.left && pt.x < pad.left + 30) return HOVER_SETTINGS;
-        if (pt.x >= pad.left + 30 && pt.x < pad.left + 60) return HOVER_SEARCH;
-        
-        if (hwndScintilla) {
-            HDC hdc = GetDC(h);
-            RECT rcEol = GetEolRect(h, hdc, rc);
-            RECT rcLang = GetLangRect(h, hdc, rc);
-            ReleaseDC(h, hdc);
+    
+    int fullTopBarH = showTopBar ? 70 : 36;
+    int topOffset = (zenMode && zenTopProgress < 0.999f) ? (int)((zenTopProgress - 1.0f) * fullTopBarH) : 0;
+    POINT topPt = pt;
+    topPt.y -= topOffset;
+
+    if (!zenMode || zenTopProgress > 0.05f) {
+        if (topPt.y >= pad.top && topPt.y < pad.top + 35) {
+            if (pt.x >= rc.right - pad.right - 45 && pt.x < rc.right - pad.right) return HOVER_CLOSE;
+            if (pt.x >= rc.right - pad.right - 90 && pt.x < rc.right - pad.right - 45) return HOVER_MAXIMIZE;
+            if (pt.x >= rc.right - pad.right - 135 && pt.x < rc.right - pad.right - 90) return HOVER_MINIMIZE;
+            if (pt.x >= pad.left + 10 && pt.x < pad.left + 35) return Sci(SCI_CANUNDO) ? HOVER_UNDO : HOVER_NONE;
+            if (pt.x >= pad.left + 35 && pt.x < pad.left + 60) return Sci(SCI_CANREDO) ? HOVER_REDO : HOVER_NONE;
             
-            int sbTop = rc.bottom - pad.bottom - 24;
-            if (pt.x >= rcEol.left && pt.x < rcEol.right && pt.y >= sbTop && pt.y < sbTop + 24) {
-                return HOVER_STATUS_EOL;
+            int startX = pad.left + 70;
+            int maxTabRight = rc.right - pad.right - 135;
+            
+            int totalW = 0;
+            for (size_t i = 0; i < tabs.size(); ++i) totalW += GetTabWidth(i);
+            bool overflow = (startX + totalW > maxTabRight);
+            int tabLimit = overflow ? (maxTabRight - 30) : maxTabRight;
+
+            int draggedIdx = -1;
+            if (GetCapture() == h && pressedElement >= HOVER_TAB_BASE && pressedElement < HOVER_TAB_CLOSE_BASE) {
+                draggedIdx = pressedElement - HOVER_TAB_BASE;
             }
-            if (pt.x >= rcLang.left && pt.x < rcLang.right && pt.y >= sbTop && pt.y < sbTop + 24) {
-                return HOVER_STATUS_LANG;
+
+            int rightmostTabX = startX;
+            int curX = startX;
+            for (size_t i = 0; i < tabs.size(); ++i) {
+                int tabW = GetTabWidth(i);
+                if (tabs[i].isClosing) {
+                    curX += tabW;
+                    continue;
+                }
+                if (curX < tabLimit && pt.x >= curX && pt.x < curX + tabW) {
+                    if (pt.x < tabLimit) {
+                        if (pt.x >= curX + tabW - 25 && pt.x < curX + tabW - 5 && topPt.y >= pad.top + 8 && topPt.y < pad.top + 28) return (HoverElement)(HOVER_TAB_CLOSE_BASE + i);
+                        return (HoverElement)(HOVER_TAB_BASE + i);
+                    }
+                }
+                if (i != (size_t)draggedIdx && tabW > 0) {
+                    rightmostTabX = max(rightmostTabX, curX + tabW);
+                }
+                curX += tabW;
+            }
+
+            if (draggedIdx >= 0) {
+                POINT ptCursor; GetCursorPos(&ptCursor); ScreenToClient(h, &ptCursor);
+                int tabW = GetTabWidth(draggedIdx);
+                int drawX = ptCursor.x - dragGrabOffset;
+                if (drawX < startX) drawX = startX;
+                if (drawX + tabW > tabLimit) drawX = tabLimit - tabW;
+                if (tabW > 0) rightmostTabX = max(rightmostTabX, drawX + tabW);
+            }
+
+            int addTabX = overflow ? tabLimit : min(rightmostTabX, tabLimit);
+            if (pt.x >= addTabX && pt.x < addTabX + 30) return HOVER_ADD_TAB;
+        }
+    }
+
+    int bottomOffset = (zenMode && zenBottomProgress < 0.999f) ? (int)((1.0f - zenBottomProgress) * 24.0f) : 0;
+    POINT bottomPt = pt;
+    bottomPt.y += bottomOffset;
+
+    if (!zenMode || zenBottomProgress > 0.05f) {
+        if (bottomPt.y >= rc.bottom - 24 && bottomPt.y < rc.bottom) {
+            if (pt.x >= pad.left && pt.x < pad.left + 30) return HOVER_SETTINGS;
+            if (pt.x >= pad.left + 30 && pt.x < pad.left + 60) return HOVER_SEARCH;
+            
+            if (hwndScintilla) {
+                HDC hdc = GetDC(h);
+                RECT rcEol = GetEolRect(h, hdc, rc);
+                RECT rcLang = GetLangRect(h, hdc, rc);
+                ReleaseDC(h, hdc);
+                
+                int sbTop = rc.bottom - pad.bottom - 24;
+                if (pt.x >= rcEol.left && pt.x < rcEol.right && bottomPt.y >= sbTop && bottomPt.y < sbTop + 24) {
+                    return HOVER_STATUS_EOL;
+                }
+                if (pt.x >= rcLang.left && pt.x < rcLang.right && bottomPt.y >= sbTop && bottomPt.y < sbTop + 24) {
+                    return HOVER_STATUS_LANG;
+                }
+            }
+        }
+    }
+
+    if (!zenMode || zenTopProgress > 0.05f) {
+        if (showTopBar && topPt.y >= pad.top + 35 && topPt.y < pad.top + 70) {
+            int maxRight = rc.right - pad.right - 320;
+            for (size_t i = 0; i < g_pathParts.size(); ++i) {
+                if (g_pathParts[i].rect.left >= maxRight) break;
+                RECT partRc = g_pathParts[i].rect;
+                if (partRc.right > maxRight) partRc.right = maxRight;
+                if (pt.x >= partRc.left && pt.x < partRc.right) return (HoverElement)(HOVER_PATH_PART_BASE + i);
+            }
+            if (pt.x >= g_rcFileName.left && pt.x < g_rcFileName.right && topPt.y >= g_rcFileName.top && topPt.y < g_rcFileName.bottom) {
+                return HOVER_FILE_NAME;
             }
         }
     }
@@ -319,6 +384,11 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
 
     auto drawTab = [&](size_t i, int drawX, bool isDragged) {
         int tabW = GetTabWidth(i);
+        if (tabW <= 2) return;
+        
+        int saveState = SaveDC(hdc);
+        IntersectClipRect(hdc, drawX, pad.top, min(drawX + tabW, tabLimit), pad.top + 35);
+
         bool active = (i == activeTabIndex), hover = (hoverElement == HOVER_TAB_BASE + i || hoverElement == HOVER_TAB_CLOSE_BASE + i);
         if (isDragged) hover = true;
         
@@ -329,9 +399,11 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
             if (!isDragged) { activeTabLeft = drawX; activeTabRight = drawX + tabW - 1; }
         }
         
-        RECT rcText = { drawX + 10, pad.top, drawX + tabW - 25, pad.top + 35 };
-        SetTextColor(hdc, active ? theme.textActive : theme.textDim); SetBkMode(hdc, TRANSPARENT);
-        DrawTextW(hdc, tabs[i].title.c_str(), -1, &rcText, DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
+        if (tabW > 25) {
+            RECT rcText = { drawX + 10, pad.top, drawX + tabW - 25, pad.top + 35 };
+            SetTextColor(hdc, active ? theme.textActive : theme.textDim); SetBkMode(hdc, TRANSPARENT);
+            DrawTextW(hdc, tabs[i].title.c_str(), -1, &rcText, DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
+        }
         
         if (!isDragged && hwndTabRenameEdit && IsWindowVisible(hwndTabRenameEdit) && tabRenameIndex == i) {
             RECT rcBorder = { drawX + 9, pad.top + 7, drawX + tabW - 24, pad.top + 29 };
@@ -340,15 +412,20 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
             DeleteObject(hBrBorder);
         }
         
-        RECT rcClose = { drawX + tabW - 22, pad.top + 8, drawX + tabW - 6, pad.top + 28 };
-        bool cHover = (hoverElement == HOVER_TAB_CLOSE_BASE + i), cPress = (pressedElement == HOVER_TAB_CLOSE_BASE + i);
-        if (tabs[i].isModified && !cHover) {
-            FillRectColor(hdc, { drawX + tabW - 16, pad.top + 14, drawX + tabW - 10, pad.top + 20 }, theme.textDim);
-        } else {
-            DrawBtn(hdc, rcClose, L"\uE711", cHover, cPress, true, hIconFont, false, false, false, true);
+        if (tabW > 35) {
+            RECT rcClose = { drawX + tabW - 22, pad.top + 8, drawX + tabW - 6, pad.top + 28 };
+            bool cHover = (hoverElement == HOVER_TAB_CLOSE_BASE + i), cPress = (pressedElement == HOVER_TAB_CLOSE_BASE + i);
+            if (tabs[i].isModified && !cHover) {
+                FillRectColor(hdc, { drawX + tabW - 16, pad.top + 14, drawX + tabW - 10, pad.top + 20 }, theme.textDim);
+            } else {
+                DrawBtn(hdc, rcClose, L"\uE711", cHover, cPress, true, hIconFont, false, false, false, true);
+            }
         }
+
+        RestoreDC(hdc, saveState);
     };
 
+    int rightmostTabX = startX;
     for (size_t i = 0; i < tabs.size(); ++i) {
         int tabW = GetTabWidth(i);
         if (i == (size_t)draggedIdx) {
@@ -356,6 +433,7 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
             FillRectColor(hdc, { curX, pad.top, curX + tabW, pad.top + 35 }, theme.tabBg);
         } else {
             drawTab(i, curX, false);
+            if (tabW > 0) rightmostTabX = max(rightmostTabX, curX + tabW);
         }
         curX += tabW;
     }
@@ -364,11 +442,11 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
         POINT pt; GetCursorPos(&pt); ScreenToClient(h, &pt);
         int tabW = GetTabWidth(draggedIdx);
         int drawX = pt.x - dragGrabOffset;
-        // Clamp so the dragged tab stays within the tab area
         if (drawX < startX) drawX = startX;
         if (drawX + tabW > tabLimit) drawX = tabLimit - tabW;
         drawTab(draggedIdx, drawX, true);
         if (draggedIdx == activeTabIndex) { activeTabLeft = drawX; activeTabRight = drawX + tabW - 1; }
+        if (tabW > 0) rightmostTabX = max(rightmostTabX, drawX + tabW);
     }
     
     // Clear clipping region so we can draw other components normally
@@ -393,15 +471,18 @@ void PaintTopBar(HWND h, HDC hdc, const RECT& rc) {
         FillRectColor(hdc, { pad.left, pad.top + 35, rc.right - pad.right, pad.top + 36 }, theme.border);
     }
     
-    int addTabX = overflow ? tabLimit : (startX + totalW);
+    int addTabX = overflow ? tabLimit : min(rightmostTabX, tabLimit);
     DrawBtn(hdc, { addTabX, pad.top, addTabX + 30, pad.top + 35 }, L"\uE710", hoverElement == HOVER_ADD_TAB, pressedElement == HOVER_ADD_TAB, false, hIconFont, false, false, false);
     
     int btnX = rc.right - pad.right - 135;
     DrawBtn(hdc, { btnX, pad.top, btnX + 45, pad.top + 35 }, L"\uE921", hoverElement == HOVER_MINIMIZE, pressedElement == HOVER_MINIMIZE, false, hWindowIconFont, false, false, false);
-    DrawBtn(hdc, { btnX + 45, pad.top, btnX + 90, pad.top + 35 }, IsZoomed(h) ? L"\uE923" : L"\uE922", hoverElement == HOVER_MAXIMIZE, pressedElement == HOVER_MAXIMIZE, false, hWindowIconFont, false, false, false);
+    DrawBtn(hdc, { btnX + 45, pad.top, btnX + 90, pad.top + 35 }, (IsZoomed(h) || zenMode) ? L"\uE923" : L"\uE922", hoverElement == HOVER_MAXIMIZE, pressedElement == HOVER_MAXIMIZE, false, hWindowIconFont, false, false, false);
     DrawBtn(hdc, { btnX + 90, pad.top, btnX + 135, pad.top + 35 }, L"\uE8BB", hoverElement == HOVER_CLOSE, pressedElement == HOVER_CLOSE, true, hWindowIconFont, false, false, false);
     if (oldFont) SelectObject(hdc, oldFont);
 }
+
+std::vector<PathPart> g_pathParts;
+RECT g_rcFileName = {0, 0, 0, 0};
 
 void PaintHeaderBar(HWND h, HDC hdc, const RECT& rc) {
     if (!showTopBar) return;
@@ -410,18 +491,57 @@ void PaintHeaderBar(HWND h, HDC hdc, const RECT& rc) {
     FillRectColor(hdc, { pad.left, pad.top + 69, rc.right - pad.right, pad.top + 70 }, 0x3C312C);
     FillRectColor(hdc, { 0, pad.top + 36, rc.right, pad.top + 70 }, theme.bg);
     FillRectColor(hdc, { pad.left, pad.top + 69, rc.right - pad.right, pad.top + 70 }, theme.border);
-    std::wstring pathStr = (activeTabIndex < tabs.size()) ? tabs[activeTabIndex].filePath : L"", fileName = pathStr.empty() ? L"Untitled" : GetFileName(pathStr), parentDir = L"";
-    size_t lastSlash = pathStr.find_last_of(L"\\/");
-    if (lastSlash != std::wstring::npos) parentDir = pathStr.substr(0, lastSlash + 1);
+    std::wstring pathStr = (activeTabIndex < tabs.size()) ? tabs[activeTabIndex].filePath : L"", fileName = pathStr.empty() ? L"Untitled" : GetFileName(pathStr);
+    
     SetBkMode(hdc, TRANSPARENT); HFONT oldFont = hUIFont ? (HFONT)SelectObject(hdc, hUIFont) : NULL;
     RECT rcMeasure = { 0 }; DrawTextW(hdc, fileName.c_str(), -1, &rcMeasure, DT_CALCRECT | DT_SINGLELINE);
     int fileW = rcMeasure.right - rcMeasure.left;
     RECT rcFile = { pad.left + 15, pad.top + 35, pad.left + 15 + fileW, pad.top + 70 };
-    SetTextColor(hdc, theme.textActive); DrawTextW(hdc, fileName.c_str(), -1, &rcFile, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-    if (!parentDir.empty()) {
-        RECT rcParent = { pad.left + 15 + fileW + 10, pad.top + 35, rc.right - pad.right - 320, pad.top + 70 };
-        SetTextColor(hdc, theme.textDim); DrawTextW(hdc, parentDir.c_str(), -1, &rcParent, DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
+    g_rcFileName = rcFile;
+    SetTextColor(hdc, (hoverElement == HOVER_FILE_NAME) ? theme.accent : theme.textActive); DrawTextW(hdc, fileName.c_str(), -1, &rcFile, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+    
+    g_pathParts.clear();
+    if (!pathStr.empty()) {
+        size_t lastSlash = pathStr.find_last_of(L"\\/");
+        if (lastSlash != std::wstring::npos) {
+            std::wstring parentDir = pathStr.substr(0, lastSlash + 1);
+            int curX = pad.left + 15 + fileW + 10;
+            size_t start = 0, pos;
+            std::wstring currentFullPath = L"";
+            while ((pos = parentDir.find_first_of(L"\\/", start)) != std::wstring::npos) {
+                std::wstring part = parentDir.substr(start, pos - start + 1);
+                currentFullPath += part;
+                RECT rcPartMeasure = { 0 };
+                DrawTextW(hdc, part.c_str(), -1, &rcPartMeasure, DT_CALCRECT | DT_SINGLELINE);
+                int partW = rcPartMeasure.right - rcPartMeasure.left;
+                RECT rcPart = { curX, pad.top + 35, curX + partW, pad.top + 70 };
+                g_pathParts.push_back({part, rcPart, currentFullPath});
+                curX += partW;
+                start = pos + 1;
+            }
+            if (start < parentDir.length()) {
+                std::wstring part = parentDir.substr(start);
+                currentFullPath += part;
+                RECT rcPartMeasure = { 0 };
+                DrawTextW(hdc, part.c_str(), -1, &rcPartMeasure, DT_CALCRECT | DT_SINGLELINE);
+                int partW = rcPartMeasure.right - rcPartMeasure.left;
+                RECT rcPart = { curX, pad.top + 35, curX + partW, pad.top + 70 };
+                g_pathParts.push_back({part, rcPart, currentFullPath});
+            }
+        }
     }
+    
+    int maxRight = rc.right - pad.right - 320;
+    for (size_t i = 0; i < g_pathParts.size(); ++i) {
+        if (g_pathParts[i].rect.left >= maxRight) break;
+        RECT drawRc = g_pathParts[i].rect;
+        if (drawRc.right > maxRight) drawRc.right = maxRight;
+        HoverElement el = (HoverElement)(HOVER_PATH_PART_BASE + i);
+        bool isHover = (hoverElement == el);
+        SetTextColor(hdc, isHover ? theme.accent : theme.textDim);
+        DrawTextW(hdc, g_pathParts[i].text.c_str(), -1, &drawRc, DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
+    }
+    
     if (oldFont) SelectObject(hdc, oldFont);
 }
 
@@ -703,7 +823,10 @@ void TriggerSearchDialog(HWND h) {
 
 void OnElementClicked(HWND h, HoverElement el) {
     if (el == HOVER_CLOSE) PostMessage(h, WM_CLOSE, 0, 0);
-    else if (el == HOVER_MAXIMIZE) ShowWindow(h, IsZoomed(h) ? SW_RESTORE : SW_MAXIMIZE);
+    else if (el == HOVER_MAXIMIZE) {
+        if (zenMode) ToggleZenMode(h);
+        else ShowWindow(h, IsZoomed(h) ? SW_RESTORE : SW_MAXIMIZE);
+    }
     else if (el == HOVER_MINIMIZE) ShowWindow(h, SW_MINIMIZE);
     else if (el == HOVER_UNDO) { if (Sci(SCI_CANUNDO)) Sci(SCI_UNDO); }
     else if (el == HOVER_REDO) { if (Sci(SCI_CANREDO)) Sci(SCI_REDO); }
@@ -750,6 +873,16 @@ void OnElementClicked(HWND h, HoverElement el) {
     }
     else if (el == HOVER_REPLACE_NEXT) SearchReplace();
     else if (el == HOVER_REPLACE_ALL) SearchReplaceAll();
+    else if (el == HOVER_FILE_NAME) {
+        bool isShift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        RunCurrentFile(h, isShift);
+    }
+    else if (el >= HOVER_PATH_PART_BASE) {
+        size_t idx = el - HOVER_PATH_PART_BASE;
+        if (idx >= 0 && idx < g_pathParts.size()) {
+            ShellExecuteW(NULL, L"open", g_pathParts[idx].fullPath.c_str(), NULL, NULL, SW_SHOW);
+        }
+    }
 }
 
 void TriggerTabRename(HWND h, int index) {
@@ -779,4 +912,40 @@ void TriggerTabRename(HWND h, int index) {
         }
         curX += tabW;
     }
+}
+
+static WINDOWPLACEMENT g_wpPrev = { sizeof(g_wpPrev) };
+
+void ToggleZenMode(HWND hwnd) {
+    zenMode = !zenMode;
+    if (zenMode) {
+        zenTopVisible = false;
+        zenBottomVisible = false;
+        zenTopProgress = 0.0f;
+        zenBottomProgress = 0.0f;
+        zenTopAnimTargetProgress = 0.0f;
+        zenBottomAnimTargetProgress = 0.0f;
+    } else {
+        zenTopVisible = true;
+        zenBottomVisible = true;
+        zenTopProgress = 1.0f;
+        zenBottomProgress = 1.0f;
+        zenTopAnimTargetProgress = 1.0f;
+        zenBottomAnimTargetProgress = 1.0f;
+        KillTimer(hwnd, 4);
+        timeEndPeriod(1);
+    }
+    DWORD dwStyle = GetWindowLong(hwnd, GWL_STYLE);
+    if (zenMode) {
+        MONITORINFO mi = { sizeof(mi) };
+        if (GetWindowPlacement(hwnd, &g_wpPrev) && GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) {
+            SetWindowLong(hwnd, GWL_STYLE, dwStyle & ~WS_OVERLAPPEDWINDOW);
+            SetWindowPos(hwnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left, mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        }
+    } else {
+        SetWindowLong(hwnd, GWL_STYLE, dwStyle | WS_OVERLAPPEDWINDOW);
+        SetWindowPlacement(hwnd, &g_wpPrev);
+        SetWindowPos(hwnd, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    }
+    UpdateUI(hwnd);
 }

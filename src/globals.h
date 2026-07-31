@@ -7,6 +7,7 @@
 #include <dwmapi.h>
 #include <uxtheme.h>
 #include <commdlg.h>
+#include <timeapi.h>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -18,6 +19,7 @@
 #pragma comment(lib, "comdlg32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "advapi32.lib")
+#pragma comment(lib, "winmm.lib")
 
 // Standalone Scintilla Lexer IDs
 #define SCLEX_NULL 0
@@ -85,12 +87,18 @@
 struct Tab {
     std::wstring filePath, title;
     sptr_t docPointer;
-    bool isModified;
+    bool isModified = false;
     std::wstring backupFile = L"";
     bool isLoaded = false;
     int eolMode = 0; // SC_EOL_CRLF
     FILETIME lastWriteTime = {0, 0};
     std::string manualLanguage = ""; // empty = auto-detect from extension
+
+    // Tab animation state
+    float animProgress = 1.0f;
+    LARGE_INTEGER animStartQPC = {0, 0};
+    bool isOpening = false;
+    bool isClosing = false;
 };
 
 FILETIME GetFileLastWriteTime(const std::wstring& path);
@@ -100,7 +108,8 @@ enum HoverElement {
     HOVER_TAB_BASE, HOVER_TAB_CLOSE_BASE = 100, HOVER_SETTINGS = 200, HOVER_SEARCH,
     HOVER_SEARCH_PREV, HOVER_SEARCH_NEXT, HOVER_SEARCH_SELECT_ALL, HOVER_SEARCH_REPLACE_TOGGLE,
     HOVER_SEARCH_CLOSE, HOVER_REPLACE_NEXT, HOVER_REPLACE_ALL,
-    HOVER_STATUS_EOL, HOVER_STATUS_LANG
+    HOVER_STATUS_EOL, HOVER_STATUS_LANG,
+    HOVER_FILE_NAME, HOVER_PATH_PART_BASE = 300
 };
 
 struct DlgButton {
@@ -139,8 +148,31 @@ extern std::vector<Tab> tabs;
 extern size_t activeTabIndex;
 extern HoverElement hoverElement, pressedElement;
 extern int dragGrabOffset;
-extern WNDPROC oldSearchEditProc, oldReplaceEditProc;
-extern WNDPROC oldSciProc;
+extern WNDPROC oldSearchEditProc, oldReplaceEditProc, oldSciProc, oldTabRenameEditProc;
+LRESULT CALLBACK SearchEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK ReplaceEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK TabRenameEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK ScrollbarProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK SciSubProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+void RunCurrentFile(HWND hwnd, bool runAsAdmin = false);
+void ToggleZenMode(HWND hwnd);
+void TriggerZenTopAnimation(HWND hwnd, bool show);
+void TriggerZenBottomAnimation(HWND hwnd, bool show);
+void CleanupUserChoiceAssociations();
+
+#define VELO_COPYDATA_FILE_OPEN   0x56454C4F // 'VELO'
+#define VELO_COPYDATA_TAB_TRANSFER 0x56454C46 // 'VELF'
+
+struct VeloTabTransferHeader {
+    wchar_t title[128];
+    wchar_t filePath[260];
+    bool isModified;
+    int eolMode;
+    int textSize;
+};
+
+bool DetachTabToNewWindow(HWND hSource, size_t tabIdx);
+bool TransferTabToWindow(HWND hSource, HWND hTarget, size_t tabIdx);
 
 extern int currentMatchIndex;
 extern int totalMatchesCount;
@@ -165,6 +197,16 @@ extern bool showIndentGuides;
 extern bool showWhitespace;
 extern bool caretStyleBlock;
 extern bool showTopBar;
+extern bool enableAnimations;
+extern bool zenMode;
+extern bool zenTopVisible;
+extern bool zenBottomVisible;
+extern float zenTopProgress;
+extern float zenBottomProgress;
+extern ULONGLONG zenTopAnimStart, zenBottomAnimStart;
+extern float zenTopAnimStartProgress, zenTopAnimTargetProgress;
+extern float zenBottomAnimStartProgress, zenBottomAnimTargetProgress;
+extern int tabRenameIndex;
 extern bool isSavingSession;
 
 // Utilities

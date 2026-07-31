@@ -2,6 +2,17 @@
 #define UI_DRAWING_H
 
 #include "../globals.h"
+#include <vector>
+#include <string>
+
+struct PathPart {
+    std::wstring text;
+    RECT rect;
+    std::wstring fullPath;
+};
+
+extern std::vector<PathPart> g_pathParts;
+extern RECT g_rcFileName;
 
 void PaintTopBar(HWND h, HDC hdc, const RECT& rc);
 void PaintHeaderBar(HWND h, HDC hdc, const RECT& rc);

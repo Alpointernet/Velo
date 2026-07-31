@@ -1,6 +1,8 @@
 #include "../globals.h"
 #include "editor.h"
 #include "ui_drawing.h"
+#include "dialogs.h"
+#include "tabmanager.h"
 #include <vector>
 
 int GetTotalMarginWidth() {
@@ -903,4 +905,536 @@ void UpdateBraceMatch() {
     // No match found
     Sci(SCI_BRACEHIGHLIGHT, INVALID_POSITION, INVALID_POSITION);
     Sci(SCI_SETHIGHLIGHTGUIDE, 0);
+}
+
+LRESULT CALLBACK SearchEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_KEYDOWN) {
+        if (wParam == VK_RETURN) {
+            SearchNext();
+            return 0;
+        } else if (wParam == VK_ESCAPE) {
+            TriggerSearchDialog(hwndMain);
+            return 0;
+        } else if (wParam == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            SendMessage(hwnd, EM_SETSEL, 0, -1);
+            return 0;
+        }
+    } else if (msg == WM_CHAR && (wParam == VK_RETURN || wParam == 1)) {
+        return 0; // Prevent system ding on Enter or Ctrl+A
+    }
+    return CallWindowProcW(oldSearchEditProc, hwnd, msg, wParam, lParam);
+}
+
+LRESULT CALLBACK ReplaceEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_KEYDOWN) {
+        if (wParam == VK_RETURN) {
+            SearchReplace();
+            return 0;
+        } else if (wParam == VK_ESCAPE) {
+            TriggerSearchDialog(hwndMain);
+            return 0;
+        } else if (wParam == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            SendMessage(hwnd, EM_SETSEL, 0, -1);
+            return 0;
+        }
+    } else if (msg == WM_CHAR && (wParam == VK_RETURN || wParam == 1)) {
+        return 0; // Prevent system ding on Enter or Ctrl+A
+    }
+    return CallWindowProcW(oldReplaceEditProc, hwnd, msg, wParam, lParam);
+}
+
+LRESULT CALLBACK ScrollbarProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    bool isVert = (hwnd == hwndVScroll);
+    bool &hover = isVert ? vScrollHover : hScrollHover, &drag = isVert ? vScrollDrag : hScrollDrag;
+    switch (msg) {
+        case WM_PAINT: {
+            PAINTSTRUCT ps; HDC hdc = BeginPaint(hwnd, &ps);
+            RECT rc; GetClientRect(hwnd, &rc);
+            FillRectColor(hdc, rc, (drag || hover) ? theme.accent : theme.border);
+            EndPaint(hwnd, &ps); return 0;
+        }
+        case WM_MOUSEMOVE: {
+            POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+            if (drag && scrollDragMaxTravel > 0) {
+                POINT scrPt = pt; ClientToScreen(hwnd, &scrPt);
+                int delta = (isVert ? scrPt.y : scrPt.x) - scrollDragStart;
+                int newPos = max(0, min(scrollDragStartPos + (int)((double)delta / scrollDragMaxTravel * scrollDragMaxScroll), scrollDragMaxScroll));
+                Sci(isVert ? SCI_SETFIRSTVISIBLELINE : SCI_SETXOFFSET, newPos);
+            } else if (!drag) {
+                if (!hover) { hover = true; InvalidateRect(hwnd, NULL, FALSE); TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, hwnd, 0 }; TrackMouseEvent(&tme); }
+            }
+            return 0;
+        }
+        case WM_MOUSELEAVE: { hover = false; InvalidateRect(hwnd, NULL, FALSE); return 0; }
+        case WM_LBUTTONDOWN: {
+            POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+            drag = true; hover = true;
+            POINT scrPt = pt; ClientToScreen(hwnd, &scrPt);
+            scrollDragStart = isVert ? scrPt.y : scrPt.x;
+            scrollDragStartPos = isVert ? Sci(SCI_GETFIRSTVISIBLELINE) : Sci(SCI_GETXOFFSET);
+
+            RECT rcSci; GetClientRect(hwndScintilla, &rcSci);
+            int marginW = GetTotalMarginWidth();
+            int vLineH = Sci(SCI_TEXTHEIGHT);
+            int vVis = vLineH > 0 ? rcSci.bottom / vLineH : 1;
+            int hVis = rcSci.right - marginW;
+
+            int vTotal = Sci(SCI_GETLINECOUNT);
+            if (isVert) {
+                scrollDragMaxScroll = max(0, vTotal - (int)(vVis * 0.6));
+            } else {
+                scrollDragMaxScroll = max(0, Sci(SCI_GETSCROLLWIDTH) - hVis);
+            }
+
+            bool needH = (Sci(SCI_GETSCROLLWIDTH) > hVis);
+            bool needV = (vTotal > vVis);
+            int trackLen = isVert ? (rcSci.bottom - (needH ? CUSTOM_SB_SIZE : 0) - 4) : (hVis - (needV ? CUSTOM_SB_SIZE : 0) - 4);
+
+            RECT rcThumb; GetClientRect(hwnd, &rcThumb);
+            scrollDragMaxTravel = max(1, trackLen - (isVert ? rcThumb.bottom : rcThumb.right));
+
+            SetCapture(hwnd); InvalidateRect(hwnd, NULL, FALSE); return 0;
+        }
+        case WM_LBUTTONUP: { if (drag) { drag = false; ReleaseCapture(); InvalidateRect(hwnd, NULL, FALSE); } return 0; }
+        case WM_MOUSEWHEEL: { SendMessage(hwndScintilla, msg, wParam, lParam); return 0; }
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+LRESULT CALLBACK SciSubProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_MOUSEMOVE && zenMode) {
+        POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+        ClientToScreen(hwnd, &pt);
+        ScreenToClient(hwndMain, &pt);
+        RECT rc; GetClientRect(hwndMain, &rc);
+        
+        if (!zenTopVisible && pt.y <= 5) TriggerZenTopAnimation(hwndMain, true);
+        else if (zenTopVisible && pt.y > 75) TriggerZenTopAnimation(hwndMain, false);
+        
+        if (!zenBottomVisible && pt.y >= rc.bottom - 5) TriggerZenBottomAnimation(hwndMain, true);
+        else if (zenBottomVisible && pt.y < rc.bottom - 45) TriggerZenBottomAnimation(hwndMain, false);
+    }
+    if (msg == WM_KEYDOWN && wParam == VK_BACK && autoCloseBraces) {
+        int sSel = Sci(SCI_GETSELECTIONSTART);
+        int eSel = Sci(SCI_GETSELECTIONEND);
+        if (sSel == eSel) {
+            int pos = Sci(SCI_GETCURRENTPOS);
+            if (pos > 0) {
+                char prev = (char)Sci(SCI_GETCHARAT, pos - 1);
+                char next = (char)Sci(SCI_GETCHARAT, pos);
+                if ((prev == '(' && next == ')') ||
+                    (prev == '{' && next == '}') ||
+                    (prev == '[' && next == ']') ||
+                    (prev == '"' && next == '"') ||
+                    (prev == '\'' && next == '\'')) {
+                    Sci(SCI_DELETERANGE, pos, 1);
+                }
+            }
+        }
+    }
+    if (msg == WM_CHAR) {
+        if (wParam < 32 && wParam != VK_RETURN && wParam != VK_TAB && wParam != VK_BACK) return 0;
+        
+        if (autoCloseBraces) {
+            wchar_t ch = (wchar_t)wParam;
+            if (ch == '(' || ch == '{' || ch == '[' || ch == '"' || ch == '\'') {
+                int sSel = Sci(SCI_GETSELECTIONSTART);
+                int eSel = Sci(SCI_GETSELECTIONEND);
+                if (sSel != eSel) {
+                    char openCh = (char)ch;
+                    char closeCh = (openCh == '(') ? ')' :
+                                   (openCh == '{') ? '}' :
+                                   (openCh == '[') ? ']' : openCh;
+                    int len = eSel - sSel;
+                    std::vector<char> buf(len + 1, 0);
+                    Sci(SCI_GETSELTEXT, 0, (LPARAM)buf.data());
+                    std::string wrapped = openCh + std::string(buf.data(), len) + closeCh;
+                    Sci(SCI_REPLACESEL, 0, (LPARAM)wrapped.c_str());
+                    Sci(SCI_SETSEL, sSel + 1, eSel + 1);
+                    return 0;
+                }
+            }
+        }
+    }
+    if (msg == WM_LBUTTONDOWN) {
+        POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+        RECT rc; GetClientRect(hwnd, &rc);
+        if (pt.x >= rc.right - CUSTOM_SB_SIZE && IsWindowVisible(hwndVScroll)) {
+            RECT vThumb; GetWindowRect(hwndVScroll, &vThumb);
+            POINT scrPt = pt; ClientToScreen(hwnd, &scrPt);
+            int lineH = Sci(SCI_TEXTHEIGHT), page = lineH > 0 ? rc.bottom / lineH : 10;
+            if (scrPt.y < vThumb.top) Sci(SCI_LINESCROLL, 0, -page);
+            else if (scrPt.y > vThumb.bottom) Sci(SCI_LINESCROLL, 0, page);
+            return 0; 
+        }
+        if (pt.y >= rc.bottom - CUSTOM_SB_SIZE && IsWindowVisible(hwndHScroll)) {
+            int marginW = GetTotalMarginWidth();
+            if (pt.x < marginW) return CallWindowProcW(oldSciProc, hwnd, msg, wParam, lParam);
+
+            RECT hThumb; GetWindowRect(hwndHScroll, &hThumb);
+            POINT scrPt = pt; ClientToScreen(hwnd, &scrPt);
+            int delta = (rc.right - marginW) / 2;
+            if (scrPt.x < hThumb.left) Sci(SCI_SETXOFFSET, max(0, (int)Sci(SCI_GETXOFFSET) - delta));
+            else if (scrPt.x > hThumb.right) Sci(SCI_SETXOFFSET, Sci(SCI_GETXOFFSET) + delta);
+            return 0; 
+        }
+    }
+    return CallWindowProcW(oldSciProc, hwnd, msg, wParam, lParam);
+}
+
+void RunCurrentFile(HWND hwnd, bool runAsAdmin) {
+    if (activeTabIndex >= tabs.size()) return;
+
+    Tab& tab = tabs[activeTabIndex];
+
+    if (tab.filePath.empty()) {
+        ShowCustomMessageBox(hwnd, L"This file must be saved to disk before it can be run.", L"Run File", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    if (tab.isModified) {
+        DoFileSave(hwnd);
+    }
+
+    std::wstring dir = tab.filePath.substr(0, tab.filePath.find_last_of(L"\\/"));
+
+    const wchar_t* verb = runAsAdmin ? L"runas" : L"open";
+
+    HINSTANCE result = ShellExecuteW(NULL, verb, tab.filePath.c_str(), NULL, dir.c_str(), SW_SHOWNORMAL);
+    intptr_t resCode = reinterpret_cast<intptr_t>(result);
+    if (resCode <= 32) {
+        if (runAsAdmin && (resCode == SE_ERR_ACCESSDENIED || resCode == 1223)) {
+            // User cancelled UAC prompt
+            return;
+        }
+        ShowCustomMessageBox(hwnd, L"Failed to open this file. No application is associated with this file type.", L"Run Error", MB_OK | MB_ICONERROR);
+    }
+}
+
+void CleanupUserChoiceAssociations() {
+    const wchar_t* extensions[] = {
+        L".txt", L".log", L".md", L".markdown", L".json", L".jsonc", L".xml", L".html", L".htm", L".css", L".scss",
+        L".ini", L".cfg", L".conf", L".config", L".env", L".yaml", L".yml", L".toml", L".c", L".cpp", L".cc", L".h",
+        L".hpp", L".cs", L".java", L".js", L".jsx", L".ts", L".tsx", L".py", L".rb", L".go", L".rs", L".sql", L".ahk",
+        L".rc", L".bat", L".cmd", L".ps1", L".sh", L".iss"
+    };
+
+    wchar_t exePath[MAX_PATH] = {0};
+    GetModuleFileNameW(NULL, exePath, MAX_PATH);
+    std::wstring exeDir = exePath;
+    size_t lastSlash = exeDir.find_last_of(L'\\');
+    if (lastSlash != std::wstring::npos) exeDir = exeDir.substr(0, lastSlash + 1);
+
+    {
+        std::wstring appProgIdKey = L"Software\\Classes\\Applications\\Velo.exe";
+        std::wstring pageIcon = exeDir + L"icon\\papirus\\_page.ico";
+        bool needsWrite = true;
+
+        HKEY hAppRead;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, (appProgIdKey + L"\\DefaultIcon").c_str(), 0, KEY_READ, &hAppRead) == ERROR_SUCCESS) {
+            wchar_t curVal[MAX_PATH] = {0};
+            DWORD curSize = sizeof(curVal);
+            DWORD curType = 0;
+            if (RegQueryValueExW(hAppRead, NULL, NULL, &curType, (LPBYTE)curVal, &curSize) == ERROR_SUCCESS) {
+                if (_wcsicmp(curVal, pageIcon.c_str()) == 0) {
+                    needsWrite = false;
+                }
+            }
+            RegCloseKey(hAppRead);
+        }
+
+        if (needsWrite) {
+            HKEY hAppKey;
+            if (RegCreateKeyExW(HKEY_CURRENT_USER, appProgIdKey.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE,
+                                KEY_WRITE, NULL, &hAppKey, NULL) == ERROR_SUCCESS) {
+                HKEY hDefIcon;
+                if (RegCreateKeyExW(hAppKey, L"DefaultIcon", 0, NULL, REG_OPTION_NON_VOLATILE,
+                                    KEY_WRITE, NULL, &hDefIcon, NULL) == ERROR_SUCCESS) {
+                    RegSetValueExW(hDefIcon, NULL, 0, REG_SZ, (const BYTE*)pageIcon.c_str(),
+                                  (DWORD)((pageIcon.length() + 1) * sizeof(wchar_t)));
+                    RegCloseKey(hDefIcon);
+                }
+                RegCloseKey(hAppKey);
+            }
+        }
+    }
+    for (const wchar_t* ext : extensions) {
+        std::wstring progId = std::wstring(L"Velo") + ext;
+        std::wstring keyPath = std::wstring(L"Software\\Classes\\") + progId;
+
+        std::wstring iconFile;
+        if (wcscmp(ext, L".txt") == 0 || wcscmp(ext, L".log") == 0)
+            iconFile = L"icon\\papirus\\txt.ico";
+        else if (wcscmp(ext, L".md") == 0 || wcscmp(ext, L".markdown") == 0)
+            iconFile = L"icon\\papirus\\md.ico";
+        else if (wcscmp(ext, L".json") == 0 || wcscmp(ext, L".jsonc") == 0)
+            iconFile = L"icon\\papirus\\json.ico";
+        else if (wcscmp(ext, L".ini") == 0 || wcscmp(ext, L".conf") == 0 || wcscmp(ext, L".env") == 0)
+            iconFile = L"icon\\papirus\\ini.ico";
+        else if (wcscmp(ext, L".cfg") == 0 || wcscmp(ext, L".config") == 0)
+            iconFile = L"icon\\papirus\\cfg.ico";
+        else if (wcscmp(ext, L".toml") == 0)
+            iconFile = L"icon\\papirus\\toml.ico";
+        else if (wcscmp(ext, L".yaml") == 0)
+            iconFile = L"icon\\papirus\\yaml.ico";
+        else if (wcscmp(ext, L".yml") == 0)
+            iconFile = L"icon\\papirus\\yml.ico";
+        else if (wcscmp(ext, L".go") == 0)
+            iconFile = L"icon\\papirus\\go.ico";
+        else if (wcscmp(ext, L".rs") == 0)
+            iconFile = L"icon\\papirus\\rs.ico";
+        else if (wcscmp(ext, L".py") == 0)
+            iconFile = L"icon\\papirus\\py.ico";
+        else if (wcscmp(ext, L".rb") == 0)
+            iconFile = L"icon\\papirus\\rb.ico";
+        else if (wcscmp(ext, L".js") == 0 || wcscmp(ext, L".jsx") == 0)
+            iconFile = L"icon\\papirus\\js.ico";
+        else if (wcscmp(ext, L".ts") == 0 || wcscmp(ext, L".tsx") == 0)
+            iconFile = L"icon\\papirus\\ts.ico";
+        else if (wcscmp(ext, L".c") == 0 || wcscmp(ext, L".h") == 0)
+            iconFile = L"icon\\papirus\\c.ico";
+        else if (wcscmp(ext, L".cpp") == 0 || wcscmp(ext, L".cc") == 0 || wcscmp(ext, L".hpp") == 0)
+            iconFile = L"icon\\papirus\\cpp.ico";
+        else if (wcscmp(ext, L".cs") == 0)
+            iconFile = L"icon\\papirus\\cs.ico";
+        else if (wcscmp(ext, L".java") == 0)
+            iconFile = L"icon\\papirus\\java.ico";
+        else if (wcscmp(ext, L".html") == 0 || wcscmp(ext, L".htm") == 0)
+            iconFile = L"icon\\papirus\\html.ico";
+        else if (wcscmp(ext, L".css") == 0 || wcscmp(ext, L".scss") == 0)
+            iconFile = L"icon\\papirus\\css.ico";
+        else if (wcscmp(ext, L".xml") == 0)
+            iconFile = L"icon\\papirus\\xml.ico";
+        else if (wcscmp(ext, L".sql") == 0)
+            iconFile = L"icon\\papirus\\sql.ico";
+        else if (wcscmp(ext, L".ahk") == 0)
+            iconFile = L"icon\\papirus\\ahk.ico";
+        else if (wcscmp(ext, L".sh") == 0 || wcscmp(ext, L".bash") == 0)
+            iconFile = L"icon\\papirus\\sh.ico";
+        else if (wcscmp(ext, L".ps1") == 0)
+            iconFile = L"icon\\papirus\\ps1.ico";
+        else if (wcscmp(ext, L".bat") == 0 || wcscmp(ext, L".cmd") == 0)
+            iconFile = L"icon\\papirus\\bat.ico";
+        else
+            iconFile = L"icon\\papirus\\_page.ico";
+
+        std::wstring fullIconPath = exeDir + iconFile;
+
+        std::wstring rawExtName = (ext[0] == L'.') ? std::wstring(ext + 1) : std::wstring(ext);
+        for (auto& ch : rawExtName) ch = towupper(ch);
+        std::wstring progIdFriendlyName = rawExtName + L" Document";
+
+        HKEY hProgId;
+        if (RegCreateKeyExW(HKEY_CURRENT_USER, keyPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hProgId, NULL) == ERROR_SUCCESS) {
+            RegSetValueExW(hProgId, NULL, 0, REG_SZ, (const BYTE*)progIdFriendlyName.c_str(), (DWORD)((progIdFriendlyName.length() + 1) * sizeof(wchar_t)));
+
+            HKEY hIcon;
+            if (RegCreateKeyExW(hProgId, L"DefaultIcon", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hIcon, NULL) == ERROR_SUCCESS) {
+                RegSetValueExW(hIcon, NULL, 0, REG_SZ, (const BYTE*)fullIconPath.c_str(), (DWORD)((fullIconPath.length() + 1) * sizeof(wchar_t)));
+                RegCloseKey(hIcon);
+            }
+
+            HKEY hCmd;
+            if (RegCreateKeyExW(hProgId, L"shell\\open\\command", 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hCmd, NULL) == ERROR_SUCCESS) {
+                std::wstring cmd = L"\"" + std::wstring(exePath) + L"\" \"%1\"";
+                RegSetValueExW(hCmd, NULL, 0, REG_SZ, (const BYTE*)cmd.c_str(), (DWORD)((cmd.length() + 1) * sizeof(wchar_t)));
+                RegCloseKey(hCmd);
+            }
+            RegCloseKey(hProgId);
+        }
+
+        std::wstring subKey = std::wstring(L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\") + ext + L"\\UserChoice";
+        HKEY hKey;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, subKey.c_str(), 0, KEY_READ | KEY_WRITE, &hKey) == ERROR_SUCCESS) {
+            wchar_t value[256] = {0};
+            DWORD valueSize = sizeof(value);
+            DWORD type = 0;
+            if (RegQueryValueExW(hKey, L"ProgId", NULL, &type, (LPBYTE)value, &valueSize) == ERROR_SUCCESS) {
+                if (wcscmp(value, L"Velo.Document") == 0) {
+                    RegCloseKey(hKey);
+                    hKey = NULL;
+                    
+                    std::wstring classesKey = std::wstring(L"Software\\Classes\\") + ext;
+                    HKEY hClasses;
+                    if (RegCreateKeyExW(HKEY_CURRENT_USER, classesKey.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hClasses, NULL) == ERROR_SUCCESS) {
+                        RegSetValueExW(hClasses, NULL, 0, REG_SZ, (const BYTE*)progId.c_str(), (DWORD)((progId.length() + 1) * sizeof(wchar_t)));
+                        RegCloseKey(hClasses);
+                    }
+                    
+                    std::wstring parentKey = std::wstring(L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\") + ext;
+                    HKEY hParent;
+                    if (RegOpenKeyExW(HKEY_CURRENT_USER, parentKey.c_str(), 0, KEY_WRITE, &hParent) == ERROR_SUCCESS) {
+                        RegDeleteKeyW(hParent, L"UserChoice");
+                        RegCloseKey(hParent);
+                    }
+                }
+            }
+            if (hKey) {
+                RegCloseKey(hKey);
+            }
+        }
+    }
+
+    {
+        std::wstring pageIconPath = exeDir + L"icon\\papirus\\_page.ico";
+        HKEY hFileExts;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts", 0, KEY_READ, &hFileExts) == ERROR_SUCCESS) {
+            DWORD subCount = 0;
+            RegQueryInfoKeyW(hFileExts, NULL, NULL, NULL, &subCount, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+
+            for (DWORD i = 0; i < subCount; ++i) {
+                wchar_t extBuf[256] = {0};
+                DWORD extLen = 256;
+                if (RegEnumKeyExW(hFileExts, i, extBuf, &extLen, NULL, NULL, NULL, NULL) != ERROR_SUCCESS)
+                    continue;
+
+                std::wstring ext(extBuf);
+                if (ext.length() == 0 || ext[0] != L'.') continue;
+
+                std::wstring ucKey = ext + L"\\UserChoice";
+                HKEY hUC;
+                if (RegOpenKeyExW(hFileExts, ucKey.c_str(), 0, KEY_READ, &hUC) != ERROR_SUCCESS)
+                    continue;
+
+                wchar_t progIdBuf[256] = {0};
+                DWORD progIdSize = sizeof(progIdBuf);
+                DWORD type = 0;
+                HRESULT hr = RegQueryValueExW(hUC, L"ProgId", NULL, &type, (LPBYTE)progIdBuf, &progIdSize);
+                RegCloseKey(hUC);
+                if (hr != ERROR_SUCCESS) continue;
+
+                bool isVeloProgId = (wcsncmp(progIdBuf, L"Velo", 4) == 0);
+                bool isAppProgId = (wcscmp(progIdBuf, L"Applications\\Velo.exe") == 0);
+                if (!isVeloProgId && !isAppProgId) continue;
+
+                if (isAppProgId) {
+                    std::wstring extStr(extBuf);
+                    std::wstring perExtProgId = L"Velo" + extStr;
+                    std::wstring perExtProgIdKey = std::wstring(L"Software\\Classes\\") + perExtProgId;
+
+                    std::wstring pageIconPath2 = exeDir + L"icon\\papirus\\_page.ico";
+
+                    bool alreadyCorrect = false;
+                    HKEY hCheckProgId;
+                    if (RegOpenKeyExW(HKEY_CURRENT_USER, (perExtProgIdKey + L"\\DefaultIcon").c_str(), 0, KEY_READ, &hCheckProgId) == ERROR_SUCCESS) {
+                        wchar_t curIcon[MAX_PATH] = {0};
+                        DWORD curSize = sizeof(curIcon);
+                        DWORD curType = 0;
+                        if (RegQueryValueExW(hCheckProgId, NULL, NULL, &curType, (LPBYTE)curIcon, &curSize) == ERROR_SUCCESS) {
+                            if (_wcsicmp(curIcon, pageIconPath2.c_str()) == 0) {
+                                alreadyCorrect = true;
+                            }
+                        }
+                        RegCloseKey(hCheckProgId);
+                    }
+
+                    if (!alreadyCorrect) {
+                        std::wstring rawExt = (extStr.length() > 1) ? extStr.substr(1) : extStr;
+                        for (auto& ch : rawExt) ch = towupper(ch);
+                        std::wstring displayName = rawExt + L" Document";
+
+                        HKEY hPerExt;
+                        if (RegCreateKeyExW(HKEY_CURRENT_USER, perExtProgIdKey.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE,
+                                            KEY_WRITE, NULL, &hPerExt, NULL) == ERROR_SUCCESS) {
+                            RegSetValueExW(hPerExt, NULL, 0, REG_SZ, (const BYTE*)displayName.c_str(),
+                                          (DWORD)((displayName.length() + 1) * sizeof(wchar_t)));
+                            HKEY hIcon;
+                            if (RegCreateKeyExW(hPerExt, L"DefaultIcon", 0, NULL, REG_OPTION_NON_VOLATILE,
+                                                KEY_WRITE, NULL, &hIcon, NULL) == ERROR_SUCCESS) {
+                                RegSetValueExW(hIcon, NULL, 0, REG_SZ, (const BYTE*)pageIconPath2.c_str(),
+                                              (DWORD)((pageIconPath2.length() + 1) * sizeof(wchar_t)));
+                                RegCloseKey(hIcon);
+                            }
+                            HKEY hCmd;
+                            if (RegCreateKeyExW(hPerExt, L"shell\\open\\command", 0, NULL, REG_OPTION_NON_VOLATILE,
+                                                KEY_WRITE, NULL, &hCmd, NULL) == ERROR_SUCCESS) {
+                                std::wstring cmd = L"\"" + std::wstring(exePath) + L"\" \"%1\"";
+                                RegSetValueExW(hCmd, NULL, 0, REG_SZ, (const BYTE*)cmd.c_str(),
+                                              (DWORD)((cmd.length() + 1) * sizeof(wchar_t)));
+                                RegCloseKey(hCmd);
+                            }
+                            RegCloseKey(hPerExt);
+                        }
+
+                        std::wstring classesKey = std::wstring(L"Software\\Classes\\") + extStr;
+                        HKEY hClasses;
+                        if (RegCreateKeyExW(HKEY_CURRENT_USER, classesKey.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE,
+                                            KEY_WRITE, NULL, &hClasses, NULL) == ERROR_SUCCESS) {
+                            RegSetValueExW(hClasses, NULL, 0, REG_SZ, (const BYTE*)perExtProgId.c_str(),
+                                          (DWORD)((perExtProgId.length() + 1) * sizeof(wchar_t)));
+                            RegCloseKey(hClasses);
+                        }
+                    }
+                    continue;
+                }
+
+                std::wstring progIdKey = std::wstring(L"Software\\Classes\\") + progIdBuf;
+                HKEY hProgId;
+
+                std::wstring rawExt(progIdBuf + 4);
+                if (!rawExt.empty() && rawExt[0] == L'.') rawExt = rawExt.substr(1);
+                for (auto& ch : rawExt) ch = towupper(ch);
+                std::wstring displayName = rawExt + L" Document";
+
+                if (RegOpenKeyExW(HKEY_CURRENT_USER, progIdKey.c_str(), 0, KEY_READ, &hProgId) == ERROR_SUCCESS) {
+                    HKEY hIcon = NULL;
+                    bool hasIcon = (RegOpenKeyExW(hProgId, L"DefaultIcon", 0, KEY_READ, &hIcon) == ERROR_SUCCESS);
+                    bool needsIconFix = false;
+                    if (hasIcon) {
+                        wchar_t iconVal[MAX_PATH] = {0};
+                        DWORD iconValSize = sizeof(iconVal);
+                        DWORD iconType = 0;
+                        if (RegQueryValueExW(hIcon, NULL, NULL, &iconType, (LPBYTE)iconVal, &iconValSize) == ERROR_SUCCESS) {
+                            std::wstring iconStr(iconVal);
+                            if (iconStr.find(L"Velo.exe") != std::wstring::npos ||
+                                iconStr.find(L"velo.exe") != std::wstring::npos) {
+                                needsIconFix = true;
+                            }
+                        }
+                        RegCloseKey(hIcon);
+                    }
+                    RegCloseKey(hProgId);
+
+                    if (!hasIcon || needsIconFix) {
+                        if (RegCreateKeyExW(HKEY_CURRENT_USER, progIdKey.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE,
+                                            KEY_WRITE, NULL, &hProgId, NULL) == ERROR_SUCCESS) {
+                            RegSetValueExW(hProgId, NULL, 0, REG_SZ, (const BYTE*)displayName.c_str(),
+                                          (DWORD)((displayName.length() + 1) * sizeof(wchar_t)));
+                            HKEY hIconW;
+                            if (RegCreateKeyExW(hProgId, L"DefaultIcon", 0, NULL, REG_OPTION_NON_VOLATILE,
+                                                KEY_WRITE, NULL, &hIconW, NULL) == ERROR_SUCCESS) {
+                                RegSetValueExW(hIconW, NULL, 0, REG_SZ, (const BYTE*)pageIconPath.c_str(),
+                                              (DWORD)((pageIconPath.length() + 1) * sizeof(wchar_t)));
+                                RegCloseKey(hIconW);
+                            }
+                            RegCloseKey(hProgId);
+                        }
+                    }
+                } else {
+                    if (RegCreateKeyExW(HKEY_CURRENT_USER, progIdKey.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE,
+                                        KEY_WRITE, NULL, &hProgId, NULL) == ERROR_SUCCESS) {
+                        RegSetValueExW(hProgId, NULL, 0, REG_SZ, (const BYTE*)displayName.c_str(),
+                                      (DWORD)((displayName.length() + 1) * sizeof(wchar_t)));
+                        HKEY hIcon;
+                        if (RegCreateKeyExW(hProgId, L"DefaultIcon", 0, NULL, REG_OPTION_NON_VOLATILE,
+                                            KEY_WRITE, NULL, &hIcon, NULL) == ERROR_SUCCESS) {
+                            RegSetValueExW(hIcon, NULL, 0, REG_SZ, (const BYTE*)pageIconPath.c_str(),
+                                          (DWORD)((pageIconPath.length() + 1) * sizeof(wchar_t)));
+                            RegCloseKey(hIcon);
+                        }
+                        HKEY hCmd;
+                        if (RegCreateKeyExW(hProgId, L"shell\\open\\command", 0, NULL, REG_OPTION_NON_VOLATILE,
+                                            KEY_WRITE, NULL, &hCmd, NULL) == ERROR_SUCCESS) {
+                            std::wstring cmd = L"\"" + std::wstring(exePath) + L"\" \"%1\"";
+                            RegSetValueExW(hCmd, NULL, 0, REG_SZ, (const BYTE*)cmd.c_str(),
+                                          (DWORD)((cmd.length() + 1) * sizeof(wchar_t)));
+                            RegCloseKey(hCmd);
+                        }
+                        RegCloseKey(hProgId);
+                    }
+                }
+            }
+            RegCloseKey(hFileExts);
+        }
+    }
 }

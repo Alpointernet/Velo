@@ -164,9 +164,12 @@ LRESULT CALLBACK CustomDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
             InvalidateRect(hwnd, NULL, FALSE);
             return 0;
         }
-        case WM_CLOSE: {
-            data->result = IDCANCEL;
-            data->running = false;
+        case WM_CLOSE:
+        case WM_DESTROY: {
+            if (data) {
+                data->result = IDCANCEL;
+                data->running = false;
+            }
             return 0;
         }
     }
@@ -265,13 +268,17 @@ int ShowCustomMessageBox(HWND hwndParent, const std::wstring& message, const std
     
     MSG msg;
     while (data.running && GetMessageW(&msg, NULL, 0, 0)) {
+        if (!IsWindow(hwndDlg)) {
+            data.running = false;
+            break;
+        }
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
     
-    DestroyWindow(hwndDlg);
+    if (IsWindow(hwndDlg)) DestroyWindow(hwndDlg);
     
-    if (hwndParent) {
+    if (hwndParent && IsWindow(hwndParent)) {
         EnableWindow(hwndParent, TRUE);
         SetFocus(hwndParent);
     }
@@ -515,6 +522,7 @@ struct CustomSettingsData {
     bool tempShowWhitespace;
     bool tempCaretStyleBlock;
     bool tempShowTopBar;
+    bool tempEnableAnimations;
     int hoveredIndex;
     int pressedIndex;
     bool running;
@@ -586,7 +594,10 @@ LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             RECT rcLblTopBar = { 20, 260, 200, 290 };
             DrawTextW(memDC, L"File Top Bar", -1, &rcLblTopBar, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
             
-            RECT rcLblTheme = { 20, 310, 200, 340 };
+            RECT rcLblTabAnim = { 20, 310, 200, 340 };
+            DrawTextW(memDC, L"UI Animations", -1, &rcLblTabAnim, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+
+            RECT rcLblTheme = { 20, 360, 200, 390 };
             DrawTextW(memDC, L"Custom Theme", -1, &rcLblTheme, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
             
             // Draw Control Buttons
@@ -603,6 +614,7 @@ LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 else if (btn.settingType == 3 && btn.value == (data->tempShowWhitespace ? 1 : 0)) active = true;
                 else if (btn.settingType == 4 && btn.value == (data->tempCaretStyleBlock ? 1 : 0)) active = true;
                 else if (btn.settingType == 5 && btn.value == (data->tempShowTopBar ? 1 : 0)) active = true;
+                else if (btn.settingType == 8 && btn.value == (data->tempEnableAnimations ? 1 : 0)) active = true;
                 
                 COLORREF bgCol = theme.popupButtonBg;
                 COLORREF borderCol = active ? theme.popupAccent : theme.popupBorder;
@@ -700,6 +712,7 @@ LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 else if (btn.settingType == 3) { data->tempShowWhitespace = (btn.value == 1); showWhitespace = data->tempShowWhitespace; updated = true; }
                 else if (btn.settingType == 4) { data->tempCaretStyleBlock = (btn.value == 1); caretStyleBlock = data->tempCaretStyleBlock; updated = true; }
                 else if (btn.settingType == 5) { data->tempShowTopBar = (btn.value == 1); showTopBar = data->tempShowTopBar; updated = true; }
+                else if (btn.settingType == 8) { data->tempEnableAnimations = (btn.value == 1); enableAnimations = data->tempEnableAnimations; updated = true; }
                 else if (btn.settingType == 7) { data->openThemeFile = true; data->running = false; } // Open Theme
                 else if (btn.settingType == 6) data->running = false; // OK
                 
@@ -748,6 +761,7 @@ void ShowSettingsDialog(HWND hwndParent) {
     data.tempShowWhitespace = showWhitespace;
     data.tempCaretStyleBlock = caretStyleBlock;
     data.tempShowTopBar = showTopBar;
+    data.tempEnableAnimations = enableAnimations;
     data.hoveredIndex = -1;
     data.pressedIndex = -1;
     data.running = true;
@@ -773,15 +787,19 @@ void ShowSettingsDialog(HWND hwndParent) {
         // File Top Bar
         { { 210, 260, 290, 288 }, L"Visible", 5, 1 },
         { { 300, 260, 380, 288 }, L"Hidden", 5, 0 },
+
+        // Tab Animations
+        { { 210, 310, 290, 338 }, L"Enabled", 8, 1 },
+        { { 300, 310, 380, 338 }, L"Disabled", 8, 0 },
         
         // Custom Theme
-        { { 210, 310, 380, 338 }, L"Open theme.json", 7, 0 },
+        { { 210, 360, 380, 388 }, L"Open theme.json", 7, 0 },
         
         // OK Button
-        { { 150, 370, 250, 405 }, L"OK", 6, 0 }
+        { { 150, 420, 250, 455 }, L"OK", 6, 0 }
     };
     
-    int dlgW = 400, dlgH = 430;
+    int dlgW = 400, dlgH = 480;
     int x = CW_USEDEFAULT, y = CW_USEDEFAULT;
     if (hwndParent) {
         RECT rcParent;
@@ -808,13 +826,17 @@ void ShowSettingsDialog(HWND hwndParent) {
     
     MSG msg;
     while (data.running && GetMessageW(&msg, NULL, 0, 0)) {
+        if (!IsWindow(hwndDlg)) {
+            data.running = false;
+            break;
+        }
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
     
-    DestroyWindow(hwndDlg);
+    if (IsWindow(hwndDlg)) DestroyWindow(hwndDlg);
     
-    if (hwndParent) {
+    if (hwndParent && IsWindow(hwndParent)) {
         EnableWindow(hwndParent, TRUE);
         SetFocus(hwndParent);
     }
@@ -824,6 +846,7 @@ void ShowSettingsDialog(HWND hwndParent) {
     showWhitespace = data.tempShowWhitespace;
     caretStyleBlock = data.tempCaretStyleBlock;
     showTopBar = data.tempShowTopBar;
+    enableAnimations = data.tempEnableAnimations;
     
     if (hwndScintilla) {
         StyleScintilla(hwndScintilla);
