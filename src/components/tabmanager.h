@@ -5,7 +5,8 @@
 
 void SwitchToTab(HWND h, size_t idx);
 void CreateNewTab(HWND h, std::wstring path = L"", bool animate = true);
-void CloseTab(HWND h, size_t idx);
+bool CloseTab(HWND h, size_t idx);
+bool CloseAllTabs(HWND h);
 bool SaveModifiedTabs(HWND h);
 void LoadFileInActiveTab(HWND h, const wchar_t* path);
 void DoFileOpen(HWND h);

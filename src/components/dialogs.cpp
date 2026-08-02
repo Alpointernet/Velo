@@ -17,6 +17,16 @@ LRESULT CALLBACK CustomDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         }
     }
     
+    auto closeDialog = [&](int result) {
+        data->result = result;
+        if (data->hwndParent && IsWindow(data->hwndParent)) {
+            EnableWindow(data->hwndParent, TRUE);
+            SetForegroundWindow(data->hwndParent);
+            SetActiveWindow(data->hwndParent);
+        }
+        DestroyWindow(hwnd);
+    };
+
     switch (msg) {
         case WM_PAINT: {
             PAINTSTRUCT ps;
@@ -90,16 +100,7 @@ LRESULT CALLBACK CustomDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
             return 0;
         }
         case WM_NCHITTEST: {
-            POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
-            ScreenToClient(hwnd, &pt);
-            
-            // Check if pt is inside any button
-            for (const auto& btn : data->buttons) {
-                if (PtInRect(&btn.rect, pt)) {
-                    return HTCLIENT;
-                }
-            }
-            return HTCAPTION; // Allow dragging from anywhere else!
+            return HTCLIENT;
         }
         case WM_MOUSEMOVE: {
             POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
@@ -129,47 +130,54 @@ LRESULT CALLBACK CustomDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         }
         case WM_LBUTTONDOWN: {
             POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
-            int pressed = -1;
             for (int i = 0; i < (int)data->buttons.size(); ++i) {
                 if (PtInRect(&data->buttons[i].rect, pt)) {
-                    pressed = i;
-                    break;
+                    data->pressedButtonIndex = i;
+                    SetCapture(hwnd);
+                    InvalidateRect(hwnd, NULL, FALSE);
+                    return 0;
                 }
             }
-            
-            if (pressed != -1) {
-                data->pressedButtonIndex = pressed;
-                SetCapture(hwnd);
-                InvalidateRect(hwnd, NULL, FALSE);
-            }
+            PostMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, lParam);
             return 0;
         }
         case WM_LBUTTONUP: {
-            if (GetCapture() == hwnd) ReleaseCapture();
-            POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
-            int clicked = -1;
-            for (int i = 0; i < (int)data->buttons.size(); ++i) {
-                if (PtInRect(&data->buttons[i].rect, pt)) {
-                    clicked = i;
-                    break;
+            int wasPressed = data->pressedButtonIndex;
+            if (wasPressed >= 0) {
+                ReleaseCapture();
+            }
+            data->pressedButtonIndex = -1;
+            
+            if (wasPressed >= 0 && wasPressed < (int)data->buttons.size()) {
+                POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
+                if (PtInRect(&data->buttons[wasPressed].rect, pt)) {
+                    closeDialog(data->buttons[wasPressed].result);
+                    return 0;
                 }
             }
             
-            if (clicked == data->pressedButtonIndex && clicked != -1) {
-                data->result = data->buttons[clicked].result;
-                data->running = false;
-            }
-            
-            data->pressedButtonIndex = -1;
             InvalidateRect(hwnd, NULL, FALSE);
             return 0;
         }
+        case WM_KEYDOWN: {
+            if (!data) break;
+            int res = -1;
+            if (wParam == VK_ESCAPE) res = (data->type == MB_YESNO) ? IDNO : IDCANCEL;
+            else if (wParam == VK_RETURN && !data->buttons.empty()) res = data->buttons[0].result;
+            else if (wParam == 'N' || wParam == 'n') {
+                for (const auto& btn : data->buttons) if (btn.result == IDNO) res = IDNO;
+            } else if (wParam == 'Y' || wParam == 'y') {
+                for (const auto& btn : data->buttons) if (btn.result == IDYES) res = IDYES;
+            }
+            
+            if (res != -1) {
+                closeDialog(res);
+                return 0;
+            }
+            break;
+        }
         case WM_CLOSE:
         case WM_DESTROY: {
-            if (data) {
-                data->result = IDCANCEL;
-                data->running = false;
-            }
             return 0;
         }
     }
@@ -189,7 +197,10 @@ int ShowCustomMessageBox(HWND hwndParent, const std::wstring& message, const std
         classRegistered = true;
     }
     
+    ReleaseCapture();
+    
     CustomDialogData data;
+    data.hwndParent = hwndParent;
     data.message = message;
     data.title = title;
     data.type = type;
@@ -199,26 +210,14 @@ int ShowCustomMessageBox(HWND hwndParent, const std::wstring& message, const std
     data.running = true;
     
     if (type == MB_YESNOCANCEL) {
-        data.buttons = {
-            { {}, L"Yes", IDYES },
-            { {}, L"No", IDNO },
-            { {}, L"Cancel", IDCANCEL }
-        };
+        data.buttons = { { {}, L"Yes", IDYES }, { {}, L"No", IDNO }, { {}, L"Cancel", IDCANCEL } };
     } else if (type == MB_YESNO) {
-        data.buttons = {
-            { {}, L"Yes", IDYES },
-            { {}, L"No", IDNO }
-        };
-    } else { // MB_OK
-        data.buttons = {
-            { {}, L"OK", IDOK }
-        };
+        data.buttons = { { {}, L"Yes", IDYES }, { {}, L"No", IDNO } };
+    } else {
+        data.buttons = { { {}, L"OK", IDOK } };
     }
     
-    int dlgW = 400;
-    
-    // Calculate dynamic height based on text wrapping
-    int textH = 30; // fallback
+    int dlgW = 400, textH = 30;
     HDC hdc = GetDC(hwndParent);
     if (hdc) {
         HFONT oldFont = (HFONT)SelectObject(hdc, hSmallFont ? hSmallFont : (HFONT)GetStockObject(DEFAULT_GUI_FONT));
@@ -232,16 +231,6 @@ int ShowCustomMessageBox(HWND hwndParent, const std::wstring& message, const std
     int dlgH = 50 + textH + 60;
     if (dlgH < 150) dlgH = 150;
     
-    // Setup button rects dynamically at the bottom of the dialog
-    int btnW = 85, btnH = 28;
-    int btnY = dlgH - 45;
-    int numBtns = (int)data.buttons.size();
-    for (int i = 0; i < numBtns; ++i) {
-        int xStart = dlgW - 20 - (numBtns * btnW + (numBtns - 1) * 10);
-        int btnX = xStart + i * (btnW + 10);
-        data.buttons[i].rect = { btnX, btnY, btnX + btnW, btnY + btnH };
-    }
-    
     int x = CW_USEDEFAULT, y = CW_USEDEFAULT;
     if (hwndParent) {
         RECT rcParent;
@@ -251,36 +240,40 @@ int ShowCustomMessageBox(HWND hwndParent, const std::wstring& message, const std
     }
     
     HWND hwndDlg = CreateWindowExW(
-        0,
-        L"CustomMessageBoxClass",
-        title.c_str(),
-        WS_POPUP | WS_SYSMENU | WS_CLIPSIBLINGS,
-        x, y, dlgW, dlgH,
-        hwndParent, NULL, hInst, &data
+        WS_EX_TOPMOST, L"CustomMessageBoxClass", title.c_str(),
+        WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+        x, y, dlgW, dlgH, hwndParent, NULL, hInst, &data
     );
     
     if (!hwndDlg) return IDCANCEL;
+    
+    RECT rcClient;
+    GetClientRect(hwndDlg, &rcClient);
+    int clientW = rcClient.right, clientH = rcClient.bottom;
+    int btnW = 85, btnH = 28, btnY = clientH - 45, numBtns = (int)data.buttons.size();
+    for (int i = 0; i < numBtns; ++i) {
+        int xStart = clientW - 20 - (numBtns * btnW + (numBtns - 1) * 10);
+        int btnX = xStart + i * (btnW + 10);
+        data.buttons[i].rect = { btnX, btnY, btnX + btnW, btnY + btnH };
+    }
     
     if (hwndParent) EnableWindow(hwndParent, FALSE);
     
     ShowWindow(hwndDlg, SW_SHOW);
     UpdateWindow(hwndDlg);
+    SetForegroundWindow(hwndDlg);
+    SetFocus(hwndDlg);
     
     MSG msg;
-    while (data.running && GetMessageW(&msg, NULL, 0, 0)) {
-        if (!IsWindow(hwndDlg)) {
-            data.running = false;
-            break;
-        }
+    while (IsWindow(hwndDlg) && GetMessageW(&msg, NULL, 0, 0) > 0) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
     
-    if (IsWindow(hwndDlg)) DestroyWindow(hwndDlg);
-    
-    if (hwndParent && IsWindow(hwndParent)) {
+    // Failsafe in case dialog is destroyed externally
+    if (hwndParent && !IsWindowEnabled(hwndParent)) {
         EnableWindow(hwndParent, TRUE);
-        SetFocus(hwndParent);
+        SetActiveWindow(hwndParent);
     }
     
     return data.result;

@@ -724,6 +724,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             break;
         }
         case WM_CLOSE: {
+            if (!SaveModifiedTabs(hwnd)) return 0;
             SaveSession();
             DestroyWindow(hwnd);
             return 0;
@@ -741,6 +742,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nCmd) {
+    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     bool isDetachedLaunch = false;
     std::wstring detachedFilePath = L"";
 
@@ -931,12 +933,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nCmd) {
                     continue;
                 case 'W': 
                     if (shift) {
-                        for (int i = (int)tabs.size() - 1; i >= 0; --i) {
-                            size_t prevSize = tabs.size();
-                            CloseTab(hwnd, i);
-                            if (i > 0 && tabs.size() == prevSize) break;
-                            if (i == 0 && Sci(SCI_GETMODIFY)) break;
-                        }
+                        CloseAllTabs(hwnd);
                     } else {
                         CloseTab(hwnd, activeTabIndex);
                     }
@@ -951,5 +948,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nCmd) {
     }
     UnloadFonts();
     if (hMutex) CloseHandle(hMutex);
+    CoUninitialize();
     return 0;
 }

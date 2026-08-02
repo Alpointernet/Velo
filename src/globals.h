@@ -119,6 +119,7 @@ struct DlgButton {
 };
 
 struct CustomDialogData {
+    HWND hwndParent;
     std::wstring message;
     std::wstring title;
     UINT type;

@@ -1088,7 +1088,7 @@ void RunCurrentFile(HWND hwnd, bool runAsAdmin) {
     Tab& tab = tabs[activeTabIndex];
 
     if (tab.filePath.empty()) {
-        ShowCustomMessageBox(hwnd, L"This file must be saved to disk before it can be run.", L"Run File", MB_OK | MB_ICONWARNING);
+        ShowCustomMessageBox(hwnd, L"This file must be saved to disk before it can be run.", L"Run File", MB_OK);
         return;
     }
 
@@ -1107,7 +1107,7 @@ void RunCurrentFile(HWND hwnd, bool runAsAdmin) {
             // User cancelled UAC prompt
             return;
         }
-        ShowCustomMessageBox(hwnd, L"Failed to open this file. No application is associated with this file type.", L"Run Error", MB_OK | MB_ICONERROR);
+        ShowCustomMessageBox(hwnd, L"Failed to open this file. No application is associated with this file type.", L"Run Error", MB_OK);
     }
 }
 
