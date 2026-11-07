@@ -21,9 +21,7 @@ Most text editors are either too simple or too bloated, which makes it harder to
 - **Clean Aesthetic:** Every interface element is intentional, and you can make your own themes easily.
 - **Typographic Clarity:** Uses different fonts for editing and the GUI.
 - **Coding Usability:** Basic coding features you would expect are here.
-- **State Persistence:** Remembers what you did the last time.
-- **Quiet File Updates:** Reloads files changed on disk automatically when there are no local edits. Unsaved edits get a small status-bar notice with **Reload** and **Keep edits** actions; reloading is undoable.
-- **Responsive Motion:** Short, refresh-rate-aware transitions for tabs, menus, and settings, plus Zen-mode hover reveals that keep the editor viewport stable. Animations can be disabled in Settings.
+- **Responsive Motion:** Short, refresh-rate-aware transitions for tabs, menus, and settings.
 
 ## Keyboard Shortcuts
 
