@@ -21,7 +21,7 @@ Most text editors are either too simple or too bloated, which makes it harder to
 - **Clean Aesthetic:** Every interface element is intentional, and you can make your own themes easily.
 - **Typographic Clarity:** Uses different fonts for editing and the GUI.
 - **Coding Usability:** Basic coding features you would expect are here.
-- **Responsive Motion:** Short, refresh-rate-aware transitions for tabs, menus, and settings.
+- **Responsive Motion:** Short transitions for tabs, menus, and settings.
 
 ## Keyboard Shortcuts
 
