@@ -42,35 +42,6 @@ Most text editors are either too simple or too bloated, which makes it harder to
 | `Shift+F5` | Launch file |
 | `Ctrl+Shift+F5` | Launch file as administrator |
 
-## Project Structure
-
-```
-build.bat           → Local application build launcher (ignored)
-create_setup.bat     → Local installer build launcher (ignored)
-clean.bat           → Local generated-file cleanup launcher (ignored)
-src/
-  main.cpp          → Application entry point and window message handling
-  globals.h         → Shared state, settings, and command identifiers
-  include/          → Third-party Scintilla API headers
-  components/
-    animations.*    → Shared frame timing and UI transitions
-    shortcuts.*     → Application keyboard shortcuts
-    tabmanager.*    → Tabs, file operations, and session persistence
-    editor.*        → Scintilla styling and editing behavior
-    dialogs.*       → Settings, popup menus, and dialogs
-    ui_drawing.*    → App chrome, layout, and hit testing
-    paint_buffer.h  → Reusable GDI paint buffer
-    theme.*         → Theme loading and live updates
-    fonts.*         → Private runtime fonts
-fonts/              → Editor and interface font assets
-icon/               → Application image and file-type icons
-scripts/            → Local build, installer, and cleanup implementation (ignored)
-obj/                → Generated intermediates (ignored)
-output/             → Generated installer (ignored)
-```
-
-Formatting and line-ending conventions are defined in `.editorconfig` and `.gitattributes`.
-
 ## License
 
 See [LICENSE.md](LICENSE.md) for Velo's license. Velo uses the [Scintilla](https://www.scintilla.org/) editing library and Lexilla for syntax highlighting.
