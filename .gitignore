@@ -10,7 +10,6 @@
 obj/
 output/
 
-
 # Generated icon (built from app.png)
 icon/app.ico
 

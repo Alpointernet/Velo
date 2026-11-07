@@ -5,50 +5,45 @@
 #include "dialogs.h"
 #include "animations.h"
 #include <shlobj.h>
+#include <climits>
+#include <algorithm>
 
 static std::wstring GetBackupsDir();
 static std::string GetDocText(sptr_t docPointer);
-static void CleanOldBackups(size_t startIdx);
+static void CleanOldBackups(const std::vector<std::wstring>& retained);
+static void DeleteTabBackup(Tab& tab);
 std::wstring GetFileName(const std::wstring& path) {
     size_t pos = path.find_last_of(L"\\/");
     return pos == std::wstring::npos ? path : path.substr(pos + 1);
 }
 
-int GetTabWidth(size_t index) {
-    if (index >= tabs.size()) return 0;
-    
-    auto GetTabNaturalWidth = [](size_t idx) -> int {
-        if (idx >= tabs.size()) return 0;
-        int textW = (int)tabs[idx].title.length() * 8;
-        return max(80, min(180, textW + 45));
-    };
-    
+std::vector<TabLayout> GetTabLayout() {
     RECT rcMain; GetClientRect(hwndMain, &rcMain);
     RECT pad = GetPad(hwndMain);
     int availableW = rcMain.right - pad.left - pad.right - 70 - 135 - 30;
     if (availableW < 100) availableW = 100;
-    
+
+    std::vector<TabLayout> layout(tabs.size());
     double totalNaturalW = 0;
     for (size_t i = 0; i < tabs.size(); ++i) {
+        layout[i].contentWidth = max(80, min(180, (int)tabs[i].title.length() * 8 + 45));
         double eff = (tabs[i].isOpening || tabs[i].isClosing) ? (double)tabs[i].animProgress : 1.0;
-        totalNaturalW += GetTabNaturalWidth(i) * eff;
+        totalNaturalW += layout[i].contentWidth * eff;
     }
-    
-    int naturalW = GetTabNaturalWidth(index);
-    int baseW = naturalW;
-    if (totalNaturalW > availableW && totalNaturalW > 0) {
-        double scale = (double)availableW / totalNaturalW;
-        baseW = (int)(naturalW * scale);
-        if (baseW < 45) baseW = 45;
+
+    double scale = totalNaturalW > availableW ? availableW / totalNaturalW : 1.0;
+    double edge = 0;
+    int previousEdge = 0;
+    for (size_t i = 0; i < tabs.size(); ++i) {
+        double width = max(45.0, layout[i].contentWidth * scale);
+        layout[i].contentWidth = (int)(width + 0.5);
+        double progress = (tabs[i].isOpening || tabs[i].isClosing) ? tabs[i].animProgress : 1.0;
+        edge += width * progress;
+        int roundedEdge = (int)(edge + 0.5);
+        layout[i].width = max(0, roundedEdge - previousEdge);
+        previousEdge = roundedEdge;
     }
-    
-    Tab& t = tabs[index];
-    if (t.isOpening || t.isClosing) {
-        int animatedW = (int)(baseW * t.animProgress);
-        return max(0, animatedW);
-    }
-    
-    return baseW;
+    return layout;
 }
 
 void SwitchToTab(HWND h, size_t idx) {
@@ -142,7 +137,8 @@ void CreateNewTab(HWND h, std::wstring path, bool animate) {
     if (doAnimate) {
         newTab.isOpening = true;
         newTab.isClosing = false;
-        QueryPerformanceCounter(&newTab.animStartQPC);
+        newTab.animStartQPC = {};
+        newTab.animStartProgress = 0.0f;
         newTab.animProgress = 0.0f;
     } else {
         newTab.isOpening = false;
@@ -153,11 +149,8 @@ void CreateNewTab(HWND h, std::wstring path, bool animate) {
     SwitchToTab(h, tabs.size() - 1); Sci(SCI_EMPTYUNDOBUFFER);
     
     if (doAnimate) {
-        timeBeginPeriod(1);
-        SetTimer(h, 5, 1, NULL);
+        StartUIAnimationTimer(h);
     }
-    
-    SaveSession();
 }
 
 bool CloseTab(HWND h, size_t idx) {
@@ -172,6 +165,14 @@ bool CloseTab(HWND h, size_t idx) {
     size_t oldActive = activeTabIndex;
     bool isMod = tabs[idx].isModified || (idx == activeTabIndex && Sci(SCI_GETMODIFY) != 0);
     if (isMod && !tabs[idx].isClosing) {
+        // A modal save prompt pumps messages. Settle removals before using tab indices.
+        sptr_t targetDoc = tabs[idx].docPointer;
+        sptr_t previousDoc = tabs[oldActive].docPointer;
+        FinishTabAnimations(h);
+        for (size_t i = 0; i < tabs.size(); ++i) {
+            if (tabs[i].docPointer == targetDoc) idx = i;
+            if (tabs[i].docPointer == previousDoc) oldActive = i;
+        }
         SwitchToTab(h, idx);
         int res = ShowCustomMessageBox(h, L"Save changes to " + tabs[idx].title + L"?", L"Unsaved Changes", MB_YESNOCANCEL);
         if (res == IDYES) {
@@ -197,24 +198,17 @@ bool CloseTab(HWND h, size_t idx) {
                 }
                 tabs[idx].title = L"Untitled";
             }
-            std::wstring backupsDir = GetBackupsDir();
-            if (!backupsDir.empty()) {
-                std::wstring backupPath = backupsDir + L"\\backup_" + std::to_wstring(idx) + L".txt";
-                DeleteFileW(backupPath.c_str());
-            }
+            DeleteTabBackup(tabs[idx]);
         }
     }
     
     if (activeCount <= 1) {
+        if (idx != activeTabIndex) SwitchToTab(h, idx);
+        DeleteTabBackup(tabs[idx]);
         Sci(SCI_CLEARALL); Sci(SCI_SETSAVEPOINT); Sci(SCI_EMPTYUNDOBUFFER);
         tabs[idx] = { L"", L"Untitled", tabs[idx].docPointer, false, L"", true, 0, GetFileLastWriteTime(L"") };
         tabs[idx].isOpening = false; tabs[idx].isClosing = false; tabs[idx].animProgress = 1.0f;
         activeLineStart = -1; activeLineEnd = -1; ApplySyntax(); SyncLineNumbers(true); UpdateUI(h);
-        std::wstring backupsDir = GetBackupsDir();
-        if (!backupsDir.empty()) {
-            std::wstring backupPath = backupsDir + L"\\backup_" + std::to_wstring(idx) + L".txt";
-            DeleteFileW(backupPath.c_str());
-        }
         SaveSession();
         return true;
     }
@@ -251,24 +245,66 @@ bool CloseTab(HWND h, size_t idx) {
 
     tabs[idx].isClosing = true;
     tabs[idx].isOpening = false;
-    QueryPerformanceCounter(&tabs[idx].animStartQPC);
-    tabs[idx].animProgress = 1.0f;
-    
-    timeBeginPeriod(1);
-    SetTimer(h, 5, 1, NULL);
-    
+    tabs[idx].animStartQPC = {};
+    tabs[idx].animStartProgress = tabs[idx].animProgress;
     SaveSession();
+    StartUIAnimationTimer(h);
     return true;
 }
 
 bool CloseAllTabs(HWND h) {
-    for (int i = (int)tabs.size() - 1; i >= 0; --i) {
-        if (i >= (int)tabs.size()) continue;
-        if (tabs[i].isClosing) continue;
-        if (!CloseTab(h, i)) {
+    FinishTabAnimations(h);
+    sptr_t previousDoc = activeTabIndex < tabs.size() ? tabs[activeTabIndex].docPointer : 0;
+    auto restoreActive = [&]() {
+        for (size_t i = 0; i < tabs.size(); ++i) {
+            if (tabs[i].docPointer == previousDoc) {
+                SwitchToTab(h, i);
+                break;
+            }
+        }
+    };
+
+    // Make save decisions first, so Cancel leaves the open tabs and their edits intact.
+    for (size_t i = 0; i < tabs.size(); ++i) {
+        if (!tabs[i].isModified && !(i == activeTabIndex && Sci(SCI_GETMODIFY))) continue;
+        SwitchToTab(h, i);
+        int result = ShowCustomMessageBox(h, L"Save changes to " + tabs[i].title + L"?", L"Unsaved Changes", MB_YESNOCANCEL);
+        if (result == IDYES) {
+            DoFileSave(h);
+            if (tabs[i].isModified || Sci(SCI_GETMODIFY)) {
+                restoreActive();
+                return false;
+            }
+        } else if (result != IDNO) {
+            restoreActive();
             return false;
         }
     }
+
+    sptr_t blankDoc = Sci(SCI_CREATEDOCUMENT);
+    if (!blankDoc) return false;
+    Sci(SCI_SETDOCPOINTER, 0, blankDoc);
+    std::wstring backupsDir = GetBackupsDir();
+    for (size_t i = 0; i < tabs.size(); ++i) {
+        Sci(SCI_RELEASEDOCUMENT, 0, tabs[i].docPointer);
+        if (!backupsDir.empty() && !tabs[i].backupFile.empty()) {
+            DeleteFileW((backupsDir + L"\\" + tabs[i].backupFile).c_str());
+        }
+    }
+    tabs.clear();
+    tabs.push_back({L"", L"Untitled", blankDoc, false, L"", true, 0, {0, 0}});
+    activeTabIndex = 0;
+    hoverElement = HOVER_NONE;
+    pressedElement = HOVER_NONE;
+    if (hwndTabRenameEdit) ShowWindow(hwndTabRenameEdit, SW_HIDE);
+    tabRenameIndex = -1;
+    activeLineStart = -1; activeLineEnd = -1;
+    ApplySyntax(); SyncLineNumbers(true);
+    RecalculateScrollWidth();
+    if (searchVisible) UpdateSearchMatches();
+    UpdateUI(h);
+    SetFocus(hwndScintilla);
+    SaveSession();
     return true;
 }
 
@@ -295,11 +331,7 @@ bool SaveModifiedTabs(HWND h) {
                     }
                     tabs[i].title = L"Untitled";
                 }
-                std::wstring backupsDir = GetBackupsDir();
-                if (!backupsDir.empty()) {
-                    std::wstring backupPath = backupsDir + L"\\backup_" + std::to_wstring(i) + L".txt";
-                    DeleteFileW(backupPath.c_str());
-                }
+                DeleteTabBackup(tabs[i]);
             }
         }
     }
@@ -307,23 +339,149 @@ bool SaveModifiedTabs(HWND h) {
 }
 
 FILETIME GetFileLastWriteTime(const std::wstring& path) {
-    FILETIME ft = {0, 0};
-    HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-    if (hFile != INVALID_HANDLE_VALUE) {
-        GetFileTime(hFile, NULL, NULL, &ft);
-        CloseHandle(hFile);
+    WIN32_FILE_ATTRIBUTE_DATA info = {};
+    if (!path.empty() && GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &info)) {
+        return info.ftLastWriteTime;
     }
-    return ft;
+    return {0, 0};
+}
+
+bool ReloadTabFromDisk(HWND h, size_t idx) {
+    if (idx >= tabs.size() || tabs[idx].isClosing || tabs[idx].filePath.empty()) return false;
+
+    auto failed = [&]() {
+        tabs[idx].externalChangePending = true;
+        tabs[idx].reloadFailed = true;
+        UpdateUI(h);
+        return false;
+    };
+
+    HANDLE file = CreateFileW(tabs[idx].filePath.c_str(), GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
+    if (file == INVALID_HANDLE_VALUE) return failed();
+
+    LARGE_INTEGER size = {};
+    FILETIME before = {}, after = {};
+    if (!GetFileSizeEx(file, &size) || size.QuadPart < 0 || size.QuadPart > INT_MAX ||
+        !GetFileTime(file, NULL, NULL, &before)) {
+        CloseHandle(file);
+        return failed();
+    }
+
+    std::vector<char> text((size_t)size.QuadPart + 1, 0);
+    DWORD read = 0;
+    bool readOK = ReadFile(file, text.data(), (DWORD)size.QuadPart, &read, NULL) != FALSE;
+    bool stable = GetFileTime(file, NULL, NULL, &after) && CompareFileTime(&before, &after) == 0;
+    CloseHandle(file);
+    if (!readOK || read != (DWORD)size.QuadPart || !stable) return failed();
+
+    bool active = idx == activeTabIndex;
+    // An inactive document can be updated without switching tabs or stealing focus.
+    HWND editor = active ? hwndScintilla : CreateWindowExW(0, L"Scintilla", L"", WS_CHILD,
+        0, 0, 0, 0, h, NULL, GetModuleHandleW(NULL), NULL);
+    if (!editor) return failed();
+    auto send = [&](UINT message, WPARAM w = 0, LPARAM l = 0) -> sptr_t {
+        return SendMessageW(editor, message, w, l);
+    };
+    if (!active) send(SCI_SETDOCPOINTER, 0, tabs[idx].docPointer);
+
+    std::vector<std::pair<sptr_t, sptr_t>> selections;
+    int mainSelection = (int)send(SCI_GETMAINSELECTION);
+    int firstLine = (int)send(SCI_GETFIRSTVISIBLELINE);
+    int xOffset = (int)send(SCI_GETXOFFSET);
+    if (active) {
+        int count = (int)send(SCI_GETSELECTIONS);
+        for (int i = 0; i < count; ++i) {
+            selections.push_back({send(SCI_GETSELECTIONNCARET, i), send(SCI_GETSELECTIONNANCHOR, i)});
+        }
+    }
+
+    bool wasSavingSession = isSavingSession;
+    isSavingSession = true;
+    // Reload remains undoable, including when the user chooses it over local edits.
+    send(SCI_BEGINUNDOACTION);
+    send(SCI_SETTARGETSTART, 0);
+    send(SCI_SETTARGETEND, send(SCI_GETLENGTH));
+    send(SCI_REPLACETARGET, read, (LPARAM)text.data());
+    send(SCI_ENDUNDOACTION);
+    send(SCI_SETSAVEPOINT);
+    if (active && !selections.empty()) {
+        send(SCI_SETSELECTION, min(selections[0].first, (sptr_t)read), min(selections[0].second, (sptr_t)read));
+        for (size_t i = 1; i < selections.size(); ++i) {
+            send(SCI_ADDSELECTION, min(selections[i].first, (sptr_t)read), min(selections[i].second, (sptr_t)read));
+        }
+        send(SCI_SETMAINSELECTION, min(mainSelection, (int)selections.size() - 1));
+        send(SCI_SETFIRSTVISIBLELINE, firstLine);
+        send(SCI_SETXOFFSET, xOffset);
+    }
+    isSavingSession = wasSavingSession;
+    if (!active) DestroyWindow(editor);
+
+    tabs[idx].isLoaded = true;
+    tabs[idx].isModified = false;
+    tabs[idx].backupFile.clear();
+    tabs[idx].lastWriteTime = after;
+    tabs[idx].externalChangePending = false;
+    tabs[idx].reloadFailed = false;
+    if (active) {
+        activeLineStart = -1; activeLineEnd = -1;
+        ApplySyntax(); SyncLineNumbers(true);
+        RecalculateScrollWidth();
+        if (searchVisible) UpdateSearchMatches();
+    }
+    UpdateUI(h);
+    SaveSession();
+    return true;
+}
+
+void CheckExternalFileChanges(HWND h) {
+    if (isSavingSession || IsIconic(h)) return;
+    bool noticeChanged = false;
+    for (size_t i = 0; i < tabs.size(); ++i) {
+        Tab& tab = tabs[i];
+        if (tab.filePath.empty() || tab.isClosing) continue;
+        FILETIME diskTime = GetFileLastWriteTime(tab.filePath);
+        if (diskTime.dwLowDateTime == 0 && diskTime.dwHighDateTime == 0) continue;
+        if (CompareFileTime(&diskTime, &tab.lastWriteTime) == 0) continue;
+
+        tab.lastWriteTime = diskTime;
+        bool modified = tab.isModified || (i == activeTabIndex && Sci(SCI_GETMODIFY) != 0);
+        if (!modified && !tab.isLoaded) continue; // Lazy loading will read the latest file.
+        if (!modified && !tab.externalChangePending) {
+            ReloadTabFromDisk(h, i);
+        } else {
+            noticeChanged = noticeChanged || !tab.externalChangePending || tab.reloadFailed;
+            tab.externalChangePending = true;
+            tab.reloadFailed = false;
+        }
+    }
+    if (noticeChanged) UpdateUI(h);
+}
+
+void KeepActiveFileEdits(HWND h) {
+    if (activeTabIndex >= tabs.size()) return;
+    tabs[activeTabIndex].externalChangePending = false;
+    tabs[activeTabIndex].reloadFailed = false;
+    UpdateUI(h);
 }
 
 void LoadFileInActiveTab(HWND h, const wchar_t* path) {
+    if (activeTabIndex >= tabs.size() || tabs[activeTabIndex].isClosing) return;
+    auto setLoadedTab = [&]() {
+        Tab loaded = {path, GetFileName(path), tabs[activeTabIndex].docPointer, false, L"", true, 0, GetFileLastWriteTime(path)};
+        loaded.isOpening = tabs[activeTabIndex].isOpening;
+        loaded.animProgress = tabs[activeTabIndex].animProgress;
+        loaded.animStartProgress = tabs[activeTabIndex].animStartProgress;
+        loaded.animStartQPC = tabs[activeTabIndex].animStartQPC;
+        tabs[activeTabIndex] = std::move(loaded);
+    };
     HANDLE hFile = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
     if (hFile != INVALID_HANDLE_VALUE) {
         DWORD size = GetFileSize(hFile, NULL), read; std::vector<char> buf(size + 1, 0);
         if (ReadFile(hFile, buf.data(), size, &read, NULL)) {
             Sci(SCI_CLEARALL); Sci(SCI_APPENDTEXT, read, (LPARAM)buf.data());
             Sci(SCI_SETSAVEPOINT); Sci(SCI_EMPTYUNDOBUFFER);
-            tabs[activeTabIndex] = { path, GetFileName(path), tabs[activeTabIndex].docPointer, false, L"", true, 0, GetFileLastWriteTime(path) };
+            setLoadedTab();
             activeLineStart = -1; activeLineEnd = -1; ApplySyntax(); SyncLineNumbers(true);
             RecalculateScrollWidth();
             if (searchVisible) UpdateSearchMatches();
@@ -332,7 +490,7 @@ void LoadFileInActiveTab(HWND h, const wchar_t* path) {
         }
         CloseHandle(hFile);
     } else {
-        tabs[activeTabIndex] = { path, GetFileName(path), tabs[activeTabIndex].docPointer, false, L"", true, 0, GetFileLastWriteTime(path) };
+        setLoadedTab();
         Sci(SCI_CLEARALL); Sci(SCI_SETSAVEPOINT); Sci(SCI_EMPTYUNDOBUFFER);
         activeLineStart = -1; activeLineEnd = -1; ApplySyntax(); SyncLineNumbers(true);
         UpdateUI(h);
@@ -359,12 +517,18 @@ void DoFileOpen(HWND h) {
 }
 
 void DoFileSave(HWND h) {
+    if (activeTabIndex >= tabs.size()) return;
     if (tabs[activeTabIndex].filePath.empty()) { DoFileSaveAs(h); return; }
     HANDLE hFile = CreateFileW(tabs[activeTabIndex].filePath.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile != INVALID_HANDLE_VALUE) {
         int len = Sci(SCI_GETLENGTH); std::vector<char> buf(len + 1, 0); Sci(SCI_GETTEXT, len + 1, (LPARAM)buf.data());
-        DWORD written; WriteFile(hFile, buf.data(), len, &written, NULL); CloseHandle(hFile);
+        DWORD written = 0;
+        bool saved = WriteFile(hFile, buf.data(), len, &written, NULL) && written == (DWORD)len;
+        CloseHandle(hFile);
+        if (!saved) return;
         tabs[activeTabIndex].lastWriteTime = GetFileLastWriteTime(tabs[activeTabIndex].filePath);
+        tabs[activeTabIndex].externalChangePending = false;
+        tabs[activeTabIndex].reloadFailed = false;
         Sci(SCI_SETSAVEPOINT); tabs[activeTabIndex].isModified = false; ApplySyntax(); UpdateUI(h);
         SaveSession();
     }
@@ -407,12 +571,16 @@ std::wstring GetConfigPath() {
 }
 
 static std::string GetDocText(sptr_t docPointer) {
-    sptr_t oldDoc = Sci(SCI_GETDOCPOINTER);
-    Sci(SCI_SETDOCPOINTER, 0, docPointer);
-    int len = Sci(SCI_GETLENGTH);
+    static HWND reader = NULL;
+    if (!IsWindow(reader)) {
+        reader = CreateWindowExW(0, L"Scintilla", L"", WS_CHILD, 0, 0, 0, 0, hwndMain, NULL, GetModuleHandleW(NULL), NULL);
+    }
+    if (!reader) return "";
+    SendMessageW(reader, SCI_SETDOCPOINTER, 0, docPointer);
+    int len = (int)SendMessageW(reader, SCI_GETLENGTH, 0, 0);
     std::vector<char> buf(len + 1, 0);
-    Sci(SCI_GETTEXT, len + 1, (LPARAM)buf.data());
-    Sci(SCI_SETDOCPOINTER, 0, oldDoc);
+    SendMessageW(reader, SCI_GETTEXT, len + 1, (LPARAM)buf.data());
+    SendMessageW(reader, SCI_SETDOCPOINTER, 0, 0);
     return std::string(buf.data(), len);
 }
 
@@ -426,23 +594,30 @@ static std::wstring GetBackupsDir() {
     return L"";
 }
 
-static void CleanOldBackups(size_t startIdx) {
+static void DeleteTabBackup(Tab& tab) {
+    if (tab.backupFile.empty()) return;
+    std::wstring dir = GetBackupsDir();
+    if (!dir.empty()) DeleteFileW((dir + L"\\" + tab.backupFile).c_str());
+    tab.backupFile.clear();
+}
+
+static void CleanOldBackups(const std::vector<std::wstring>& retained) {
     std::wstring backupsDir = GetBackupsDir();
     if (backupsDir.empty()) return;
-    int idx = (int)startIdx;
-    while (true) {
-        std::wstring backupPath = backupsDir + L"\\backup_" + std::to_wstring(idx) + L".txt";
-        DWORD attrib = GetFileAttributesW(backupPath.c_str());
-        if (attrib != INVALID_FILE_ATTRIBUTES && !(attrib & FILE_ATTRIBUTE_DIRECTORY)) {
-            DeleteFileW(backupPath.c_str());
-            idx++;
-        } else {
-            break;
+    WIN32_FIND_DATAW entry;
+    HANDLE files = FindFirstFileW((backupsDir + L"\\backup_*.txt").c_str(), &entry);
+    if (files == INVALID_HANDLE_VALUE) return;
+    do {
+        if (!(entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+            std::find(retained.begin(), retained.end(), entry.cFileName) == retained.end()) {
+            DeleteFileW((backupsDir + L"\\" + entry.cFileName).c_str());
         }
-    }
+    } while (FindNextFileW(files, &entry));
+    FindClose(files);
 }
 
 void SaveSession() {
+    if (isSavingSession) return;
     isSavingSession = true;
     std::wstring configPath = GetConfigPath();
     if (configPath.empty()) { isSavingSession = false; return; }
@@ -452,6 +627,7 @@ void SaveSession() {
     std::vector<int> validTabs;
     int newActiveTab = -1;
     for (int i = 0; i < (int)tabs.size(); ++i) {
+        if (tabs[i].isClosing) continue;
         bool isModified = false;
         if (i == activeTabIndex) {
             isModified = (Sci(SCI_GETMODIFY) != 0);
@@ -460,11 +636,8 @@ void SaveSession() {
         }
         
         bool isUntitled = tabs[i].filePath.empty();
-        int docLen = (i == activeTabIndex) ? Sci(SCI_GETLENGTH) : 0;
-        
         // Filter out completely blank untitled tabs
         if (isUntitled && !isModified) {
-            // Wait, what if the tab is inactive, we don't check docLen but !isModified guarantees it's untouched.
             continue;
         }
         
@@ -494,6 +667,8 @@ void SaveSession() {
     
     out << "\n[Tabs]\n";
     out << "count=" << validTabs.size() << "\n";
+    std::wstring backupsDir = GetBackupsDir();
+    std::vector<std::wstring> retainedBackups;
     for (size_t outIdx = 0; outIdx < validTabs.size(); ++outIdx) {
         int i = validTabs[outIdx];
         
@@ -526,18 +701,23 @@ void SaveSession() {
         
         std::string sBackup = "";
         if (isModified) {
-            if (tabs[i].isLoaded) {
+            if (tabs[i].isLoaded && !backupsDir.empty()) {
                 std::string text = GetDocText(tabs[i].docPointer);
-                std::wstring backupsDir = GetBackupsDir();
-                if (!backupsDir.empty()) {
-                    std::wstring backupPath = backupsDir + L"\\backup_" + std::to_wstring(i) + L".txt";
-                    std::ofstream backupOut(backupPath, std::ios::out | std::ios::trunc | std::ios::binary);
-                    if (backupOut.is_open()) {
-                        backupOut.write(text.data(), text.size());
-                        sBackup = "backup_" + std::to_string(i) + ".txt";
-                    }
+                // Backup ownership follows the document, never its changing tab-strip index.
+                if (tabs[i].backupFile.empty()) {
+                    static unsigned int nextBackup = 0;
+                    do {
+                        tabs[i].backupFile = L"backup_" + std::to_wstring(GetCurrentProcessId()) + L"_" +
+                            std::to_wstring(GetTickCount64()) + L"_" + std::to_wstring(++nextBackup) + L".txt";
+                    } while (GetFileAttributesW((backupsDir + L"\\" + tabs[i].backupFile).c_str()) != INVALID_FILE_ATTRIBUTES);
                 }
-            } else {
+                std::ofstream backupOut(backupsDir + L"\\" + tabs[i].backupFile, std::ios::out | std::ios::trunc | std::ios::binary);
+                if (backupOut.is_open()) {
+                    backupOut.write(text.data(), text.size());
+                }
+            }
+            if (!tabs[i].backupFile.empty()) {
+                retainedBackups.push_back(tabs[i].backupFile);
                 int lenB = WideCharToMultiByte(CP_UTF8, 0, tabs[i].backupFile.c_str(), -1, NULL, 0, NULL, NULL);
                 if (lenB > 0) {
                     std::vector<char> u8backup(lenB);
@@ -546,11 +726,10 @@ void SaveSession() {
                 }
             }
         } else {
-            std::wstring backupsDir = GetBackupsDir();
-            if (!backupsDir.empty()) {
-                std::wstring backupPath = backupsDir + L"\\backup_" + std::to_wstring(i) + L".txt";
-                DeleteFileW(backupPath.c_str());
+            if (!backupsDir.empty() && !tabs[i].backupFile.empty()) {
+                DeleteFileW((backupsDir + L"\\" + tabs[i].backupFile).c_str());
             }
+            tabs[i].backupFile.clear();
         }
         
         int eolMode = (i == activeTabIndex) ? (int)Sci(SCI_GETEOLMODE) : tabs[i].eolMode;
@@ -561,7 +740,7 @@ void SaveSession() {
         out << "tab_eol_" << outIdx << "=" << eolMode << "\n";
     }
     
-    CleanOldBackups(tabs.size());
+    CleanOldBackups(retainedBackups);
     isSavingSession = false;
 }
 

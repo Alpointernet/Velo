@@ -1,2 +1,15 @@
-# Force all .h files to be classified as C++ by GitHub Linguist
-*.h linguist-language=C++
+* text=auto
+.editorconfig text eol=lf
+.gitattributes text eol=lf
+.gitignore text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf linguist-language=C++
+*.md text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.iss text eol=crlf
+*.rc text eol=crlf
+*.manifest text eol=lf
+
+# Third-party Scintilla API headers are maintained upstream.
+src/include/* linguist-vendored

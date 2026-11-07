@@ -105,15 +105,6 @@ void RecalculateScrollWidth() {
     Sci(SCI_SETSCROLLWIDTH, scrollWidth);
 }
 
-void FindNextText(const std::string& query, bool forward) {
-    if (query.empty()) return;
-    int cur = Sci(SCI_GETCURRENTPOS), len = Sci(SCI_GETLENGTH);
-    Sci_TextToFind ft = { { forward ? cur : max(0, cur - (int)query.length()), forward ? len : 0 }, (char*)query.c_str() };
-    int found = Sci(SCI_FINDTEXT, SCFIND_NONE, (LPARAM)&ft);
-    if (found == -1) { ft.chrg = { forward ? 0 : len, cur }; found = Sci(SCI_FINDTEXT, SCFIND_NONE, (LPARAM)&ft); }
-    if (found != -1) { Sci(SCI_SETSEL, ft.chrgText.cpMin, ft.chrgText.cpMax); Sci(SCI_VERTICALCENTRECARET); }
-}
-
 void ApplySyntax() {
     std::wstring ext = L"";
     std::string manualLang = "";
@@ -133,7 +124,24 @@ void ApplySyntax() {
         else if (manualLang == "css") { lang = "css"; lex = SCLEX_CSS; }
         else if (manualLang == "markdown") { lang = "markdown"; lex = SCLEX_MARKDOWN; }
         else if (manualLang == "null") { lang = "null"; lex = SCLEX_NULL; }
+    } else if (!_wcsicmp(ext.c_str(), L"cpp") || !_wcsicmp(ext.c_str(), L"c") || !_wcsicmp(ext.c_str(), L"h") || !_wcsicmp(ext.c_str(), L"hpp") || !_wcsicmp(ext.c_str(), L"cc") ||
+        !_wcsicmp(ext.c_str(), L"js") || !_wcsicmp(ext.c_str(), L"jsx") || !_wcsicmp(ext.c_str(), L"ts") || !_wcsicmp(ext.c_str(), L"tsx") ||
+        !_wcsicmp(ext.c_str(), L"json") || !_wcsicmp(ext.c_str(), L"jsonc") || !_wcsicmp(ext.c_str(), L"ahk") ||
+        !_wcsicmp(ext.c_str(), L"cs") || !_wcsicmp(ext.c_str(), L"java") || !_wcsicmp(ext.c_str(), L"go") || !_wcsicmp(ext.c_str(), L"rs") ||
+        !_wcsicmp(ext.c_str(), L"sql") || !_wcsicmp(ext.c_str(), L"rc") || !_wcsicmp(ext.c_str(), L"iss")) {
+        lang = "cpp"; lex = SCLEX_CPP;
+    } else if (!_wcsicmp(ext.c_str(), L"py")) {
+        lang = "python"; lex = SCLEX_PYTHON;
+    } else if (!_wcsicmp(ext.c_str(), L"html") || !_wcsicmp(ext.c_str(), L"htm") || !_wcsicmp(ext.c_str(), L"xml")) {
+        lang = "hypertext"; lex = SCLEX_HTML;
+    } else if (!_wcsicmp(ext.c_str(), L"css") || !_wcsicmp(ext.c_str(), L"scss")) {
+        lang = "css"; lex = SCLEX_CSS;
+    } else if (!_wcsicmp(ext.c_str(), L"md") || !_wcsicmp(ext.c_str(), L"markdown")) {
+        lang = "markdown"; lex = SCLEX_MARKDOWN;
+    }
 
+    // Manual selection and extension detection share keyword definitions.
+    {
         if (lex == SCLEX_CPP) {
             kw0 = "int float double char void bool long short signed unsigned auto const static extern inline virtual public private protected struct class enum union namespace template typename typedef false true null nullptr var let function extends export import from default if else for while do switch case break continue return goto try catch throw new delete and or not NULL TRUE FALSE WINAPI CALLBACK package func type interface defer select chan range map make append len cap println printf fmt using override abstract final sealed async await yield base this super implements throws synchronized volatile transient native";
             kw1 = "WinMain WndProc ScrollbarProc SearchEditProc CreateWindowExW LoadCursorW RegisterClassW ShowWindow GetMessageW TranslateMessage DispatchMessageW PostMessage DefWindowProcW GetClientRect GetWindowRect FillRectColor SendMessage GetProcAddress LoadLibraryW LoadLibraryExW MessageBoxW CreateFileW ReadFile WriteFile GetFileSize CloseHandle wcscpy_s GetOpenFileNameW GetSaveFileNameW CreatePopupMenu AppendMenuW ClientToScreen TrackPopupMenu DestroyMenu PostQuitMessage CreateFontW GetDC SelectObject DrawTextW ReleaseDC SetTextColor SetBkMode SetBkColor ExtTextOutW AlphaBlend";
@@ -147,28 +155,6 @@ void ApplySyntax() {
             kw0 = "color background background-color background-image background-repeat background-position background-size background-attachment border border-top border-right border-bottom border-left border-color border-style border-width border-radius box-shadow box-sizing clear clip content cursor direction display float font font-family font-size font-style font-variant font-weight height left letter-spacing line-height list-style list-style-image list-style-position list-style-type margin margin-top margin-right margin-bottom margin-left max-height max-width min-height min-width opacity outline outline-color outline-style outline-width overflow overflow-x overflow-y padding padding-top padding-right padding-bottom padding-left position right text-align text-decoration text-indent text-overflow text-shadow text-transform top transition transform vertical-align visibility white-space width word-break word-spacing word-wrap z-index flex flex-basis flex-direction flex-flow flex-grow flex-shrink flex-wrap align-content align-items align-self justify-content order grid grid-area grid-column grid-gap grid-row grid-template animation gap place-items";
             kw1 = "active after before checked disabled empty enabled first-child first-letter first-line first-of-type focus hover in-range invalid lang last-child last-of-type link not nth-child nth-last-child nth-last-of-type nth-of-type only-child only-of-type optional out-of-range placeholder read-only read-write required root selection target valid visited";
         }
-    } else if (!_wcsicmp(ext.c_str(), L"cpp") || !_wcsicmp(ext.c_str(), L"c") || !_wcsicmp(ext.c_str(), L"h") || !_wcsicmp(ext.c_str(), L"hpp") || !_wcsicmp(ext.c_str(), L"cc") ||
-        !_wcsicmp(ext.c_str(), L"js") || !_wcsicmp(ext.c_str(), L"jsx") || !_wcsicmp(ext.c_str(), L"ts") || !_wcsicmp(ext.c_str(), L"tsx") ||
-        !_wcsicmp(ext.c_str(), L"json") || !_wcsicmp(ext.c_str(), L"jsonc") || !_wcsicmp(ext.c_str(), L"ahk") ||
-        !_wcsicmp(ext.c_str(), L"cs") || !_wcsicmp(ext.c_str(), L"java") || !_wcsicmp(ext.c_str(), L"go") || !_wcsicmp(ext.c_str(), L"rs") ||
-        !_wcsicmp(ext.c_str(), L"sql") || !_wcsicmp(ext.c_str(), L"rc") || !_wcsicmp(ext.c_str(), L"iss")) {
-        lang = "cpp"; lex = SCLEX_CPP;
-        kw0 = "int float double char void bool long short signed unsigned auto const static extern inline virtual public private protected struct class enum union namespace template typename typedef false true null nullptr var let function extends export import from default if else for while do switch case break continue return goto try catch throw new delete and or not NULL TRUE FALSE WINAPI CALLBACK package func type interface defer select chan range map make append len cap println printf fmt using override abstract final sealed async await yield base this super implements throws synchronized volatile transient native";
-        kw1 = "WinMain WndProc ScrollbarProc SearchEditProc CreateWindowExW LoadCursorW RegisterClassW ShowWindow GetMessageW TranslateMessage DispatchMessageW PostMessage DefWindowProcW GetClientRect GetWindowRect FillRectColor SendMessage GetProcAddress LoadLibraryW LoadLibraryExW MessageBoxW CreateFileW ReadFile WriteFile GetFileSize CloseHandle wcscpy_s GetOpenFileNameW GetSaveFileNameW CreatePopupMenu AppendMenuW ClientToScreen TrackPopupMenu DestroyMenu PostQuitMessage CreateFontW GetDC SelectObject DrawTextW ReleaseDC SetTextColor SetBkMode SetBkColor ExtTextOutW AlphaBlend";
-        kw3 = "std string wstring vector map set pair string_view cout cin endl HANDLE HWND HDC HFONT HBITMAP HMENU HINSTANCE LPSTR LPCWSTR WNDCLASSW WNDPROC MSG RECT POINT SIZE FILE COLORREF DWORD WORD BYTE INT_PTR LONG_PTR LRESULT UINT WPARAM LPARAM BOOL sptr_t Tab HoverElement console window document Math JSON Promise Array Object String Number Boolean SELECT FROM WHERE INSERT UPDATE DELETE CREATE TABLE ALTER DROP INDEX JOIN LEFT RIGHT INNER OUTER ON AS AND OR NOT IN EXISTS GROUP BY ORDER HAVING LIMIT OFFSET UNION INTO VALUES SET";
-    } else if (!_wcsicmp(ext.c_str(), L"py")) {
-        lang = "python"; lex = SCLEX_PYTHON;
-        kw0 = "False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield";
-        kw1 = "print len range str int float list dict set tuple bool";
-    } else if (!_wcsicmp(ext.c_str(), L"html") || !_wcsicmp(ext.c_str(), L"htm") || !_wcsicmp(ext.c_str(), L"xml")) {
-        lang = "hypertext"; lex = SCLEX_HTML;
-        kw0 = "html head title body div span a img ul li table tr td th form input button script style link meta header footer nav section article main p h1 h2 h3 h4 h5 h6 br hr";
-    } else if (!_wcsicmp(ext.c_str(), L"css") || !_wcsicmp(ext.c_str(), L"scss")) {
-        lang = "css"; lex = SCLEX_CSS;
-        kw0 = "color background background-color background-image background-repeat background-position background-size background-attachment border border-top border-right border-bottom border-left border-color border-style border-width border-radius box-shadow box-sizing clear clip content cursor direction display float font font-family font-size font-style font-variant font-weight height left letter-spacing line-height list-style list-style-image list-style-position list-style-type margin margin-top margin-right margin-bottom margin-left max-height max-width min-height min-width opacity outline outline-color outline-style outline-width overflow overflow-x overflow-y padding padding-top padding-right padding-bottom padding-left position right text-align text-decoration text-indent text-overflow text-shadow text-transform top transition transform vertical-align visibility white-space width word-break word-spacing word-wrap z-index flex flex-basis flex-direction flex-flow flex-grow flex-shrink flex-wrap align-content align-items align-self justify-content order grid grid-area grid-column grid-gap grid-row grid-template animation gap place-items";
-        kw1 = "active after before checked disabled empty enabled first-child first-letter first-line first-of-type focus hover in-range invalid lang last-child last-of-type link not nth-child nth-last-child nth-last-of-type nth-of-type only-child only-of-type optional out-of-range placeholder read-only read-write required root selection target valid visited";
-    } else if (!_wcsicmp(ext.c_str(), L"md") || !_wcsicmp(ext.c_str(), L"markdown")) {
-        lang = "markdown"; lex = SCLEX_MARKDOWN;
     }
 
     if (lex != SCLEX_NULL) {
@@ -973,7 +959,8 @@ LRESULT CALLBACK ScrollbarProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
             scrollDragStart = isVert ? scrPt.y : scrPt.x;
             scrollDragStartPos = isVert ? Sci(SCI_GETFIRSTVISIBLELINE) : Sci(SCI_GETXOFFSET);
 
-            RECT rcSci; GetClientRect(hwndScintilla, &rcSci);
+            RECT rcSci = GetEditorViewport(hwndMain);
+            OffsetRect(&rcSci, -rcSci.left, -rcSci.top);
             int marginW = GetTotalMarginWidth();
             int vLineH = Sci(SCI_TEXTHEIGHT);
             int vVis = vLineH > 0 ? rcSci.bottom / vLineH : 1;
@@ -981,7 +968,9 @@ LRESULT CALLBACK ScrollbarProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             int vTotal = Sci(SCI_GETLINECOUNT);
             if (isVert) {
-                scrollDragMaxScroll = max(0, vTotal - (int)(vVis * 0.6));
+                RECT editorClient; GetClientRect(hwndScintilla, &editorClient);
+                int editorVis = vLineH > 0 ? editorClient.bottom / vLineH : 1;
+                scrollDragMaxScroll = max(0, vTotal - (int)(editorVis * 0.6));
             } else {
                 scrollDragMaxScroll = max(0, Sci(SCI_GETSCROLLWIDTH) - hVis);
             }
@@ -1006,13 +995,7 @@ LRESULT CALLBACK SciSubProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         POINT pt = { (short)LOWORD(lParam), (short)HIWORD(lParam) };
         ClientToScreen(hwnd, &pt);
         ScreenToClient(hwndMain, &pt);
-        RECT rc; GetClientRect(hwndMain, &rc);
-        
-        if (!zenTopVisible && pt.y <= 5) TriggerZenTopAnimation(hwndMain, true);
-        else if (zenTopVisible && pt.y > 75) TriggerZenTopAnimation(hwndMain, false);
-        
-        if (!zenBottomVisible && pt.y >= rc.bottom - 5) TriggerZenBottomAnimation(hwndMain, true);
-        else if (zenBottomVisible && pt.y < rc.bottom - 45) TriggerZenBottomAnimation(hwndMain, false);
+        UpdateZenHover(hwndMain, pt);
     }
     if (msg == WM_KEYDOWN && wParam == VK_BACK && autoCloseBraces) {
         int sSel = Sci(SCI_GETSELECTIONSTART);
@@ -1190,13 +1173,13 @@ void CleanupUserChoiceAssociations() {
         else if (wcscmp(ext, L".js") == 0 || wcscmp(ext, L".jsx") == 0)
             iconFile = L"icon\\papirus\\js.ico";
         else if (wcscmp(ext, L".ts") == 0 || wcscmp(ext, L".tsx") == 0)
-            iconFile = L"icon\\papirus\\ts.ico";
+            iconFile = L"icon\\papirus\\js.ico";
         else if (wcscmp(ext, L".c") == 0 || wcscmp(ext, L".h") == 0)
             iconFile = L"icon\\papirus\\c.ico";
         else if (wcscmp(ext, L".cpp") == 0 || wcscmp(ext, L".cc") == 0 || wcscmp(ext, L".hpp") == 0)
             iconFile = L"icon\\papirus\\cpp.ico";
         else if (wcscmp(ext, L".cs") == 0)
-            iconFile = L"icon\\papirus\\cs.ico";
+            iconFile = L"icon\\papirus\\cpp.ico";
         else if (wcscmp(ext, L".java") == 0)
             iconFile = L"icon\\papirus\\java.ico";
         else if (wcscmp(ext, L".html") == 0 || wcscmp(ext, L".htm") == 0)
@@ -1208,9 +1191,9 @@ void CleanupUserChoiceAssociations() {
         else if (wcscmp(ext, L".sql") == 0)
             iconFile = L"icon\\papirus\\sql.ico";
         else if (wcscmp(ext, L".ahk") == 0)
-            iconFile = L"icon\\papirus\\ahk.ico";
+            iconFile = L"icon\\papirus\\cpp.ico";
         else if (wcscmp(ext, L".sh") == 0 || wcscmp(ext, L".bash") == 0)
-            iconFile = L"icon\\papirus\\sh.ico";
+            iconFile = L"icon\\papirus\\_page.ico";
         else if (wcscmp(ext, L".ps1") == 0)
             iconFile = L"icon\\papirus\\ps1.ico";
         else if (wcscmp(ext, L".bat") == 0 || wcscmp(ext, L".cmd") == 0)

@@ -4,6 +4,31 @@
 #include "ui_drawing.h"
 #include "tabmanager.h"
 #include "theme.h"
+#include "animations.h"
+#include "paint_buffer.h"
+
+struct DlgButton {
+    RECT rect;
+    std::wstring label;
+    int result;
+};
+
+struct CustomDialogData {
+    HWND hwndParent;
+    std::wstring message;
+    std::wstring title;
+    UINT type;
+    std::vector<DlgButton> buttons;
+    int hoveredButtonIndex;
+    int pressedButtonIndex;
+    int result;
+};
+
+static bool GetDialogMessage(MSG& message) {
+    int result = GetMessageW(&message, NULL, 0, 0);
+    if (result == 0) PostQuitMessage((int)message.wParam);
+    return result > 0;
+}
 
 LRESULT CALLBACK CustomDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     CustomDialogData* data = (CustomDialogData*)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
@@ -176,8 +201,14 @@ LRESULT CALLBACK CustomDialogProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
             }
             break;
         }
+        case WM_ENTERSIZEMOVE:
+            CancelWindowAnimation(hwnd);
+            return 0;
         case WM_CLOSE:
+            closeDialog(data->type == MB_YESNO ? IDNO : IDCANCEL);
+            return 0;
         case WM_DESTROY: {
+            CancelWindowAnimation(hwnd, false);
             return 0;
         }
     }
@@ -207,8 +238,6 @@ int ShowCustomMessageBox(HWND hwndParent, const std::wstring& message, const std
     data.hoveredButtonIndex = -1;
     data.pressedButtonIndex = -1;
     data.result = IDCANCEL;
-    data.running = true;
-    
     if (type == MB_YESNOCANCEL) {
         data.buttons = { { {}, L"Yes", IDYES }, { {}, L"No", IDNO }, { {}, L"Cancel", IDCANCEL } };
     } else if (type == MB_YESNO) {
@@ -259,18 +288,19 @@ int ShowCustomMessageBox(HWND hwndParent, const std::wstring& message, const std
     
     if (hwndParent) EnableWindow(hwndParent, FALSE);
     
-    ShowWindow(hwndDlg, SW_SHOW);
-    UpdateWindow(hwndDlg);
+    ShowAnimatedWindow(hwndDlg, SW_SHOW, 6, 120.0f);
     SetForegroundWindow(hwndDlg);
     SetFocus(hwndDlg);
     
     MSG msg;
-    while (IsWindow(hwndDlg) && GetMessageW(&msg, NULL, 0, 0) > 0) {
+    while (IsWindow(hwndDlg) && GetDialogMessage(msg)) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
     
-    // Failsafe in case dialog is destroyed externally
+    if (IsWindow(hwndDlg)) DestroyWindow(hwndDlg);
+
+    // Restore the owner even when the message loop exits early.
     if (hwndParent && !IsWindowEnabled(hwndParent)) {
         EnableWindow(hwndParent, TRUE);
         SetActiveWindow(hwndParent);
@@ -284,6 +314,7 @@ struct CustomPopupData {
     int hoveredIndex;
     int resultId;
     bool running;
+    PaintBuffer paintBuffer;
 };
 
 LRESULT CALLBACK CustomPopupProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -305,10 +336,7 @@ LRESULT CALLBACK CustomPopupProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             RECT rc;
             GetClientRect(hwnd, &rc);
             
-            // Create double buffer
-            HDC memDC = CreateCompatibleDC(hdc);
-            HBITMAP memBmp = CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
-            HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, memBmp);
+            HDC memDC = data->paintBuffer.Get(hdc, rc);
             
             // Draw background
             FillRectColor(memDC, rc, theme.popupBg);
@@ -351,13 +379,13 @@ LRESULT CALLBACK CustomPopupProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
                     }
                     
                     // Draw label text
-                    RECT rcText = { 32, yOffset, rc.right - 80, yOffset + 28 };
+                    RECT rcText = { 32, yOffset, rc.right - 116, yOffset + 28 };
                     SetTextColor(memDC, hover ? theme.popupTextActive : theme.popupText);
                     DrawTextW(memDC, item.label.c_str(), -1, &rcText, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
                     
                     // Draw shortcut text
                     if (!item.shortcut.empty()) {
-                        RECT rcShortcut = { rc.right - 90, yOffset, rc.right - 15, yOffset + 28 };
+                        RECT rcShortcut = { rc.right - 112, yOffset, rc.right - 15, yOffset + 28 };
                         SetTextColor(memDC, hover ? theme.popupText : theme.textDim);
                         DrawTextW(memDC, item.shortcut.c_str(), -1, &rcShortcut, DT_SINGLELINE | DT_RIGHT | DT_VCENTER);
                     }
@@ -368,12 +396,7 @@ LRESULT CALLBACK CustomPopupProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             
             SelectObject(memDC, oldFont);
             
-            // Copy from memory buffer to screen
-            BitBlt(hdc, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left, ps.rcPaint.bottom - ps.rcPaint.top, memDC, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
-            
-            SelectObject(memDC, oldBmp);
-            DeleteObject(memBmp);
-            DeleteDC(memDC);
+            data->paintBuffer.Present(hdc, ps.rcPaint);
             
             EndPaint(hwnd, &ps);
             return 0;
@@ -429,6 +452,34 @@ LRESULT CALLBACK CustomPopupProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
             }
             return 0;
         }
+        case WM_KEYDOWN: {
+            if (wParam == VK_ESCAPE) data->running = false;
+            else if (wParam == VK_RETURN && data->hoveredIndex >= 0) {
+                data->resultId = data->items[data->hoveredIndex].id;
+                data->running = false;
+            } else if (wParam == VK_UP || wParam == VK_DOWN) {
+                int count = (int)data->items.size();
+                int direction = wParam == VK_UP ? -1 : 1;
+                int index = data->hoveredIndex < 0 ? (direction < 0 ? 0 : count - 1) : data->hoveredIndex;
+                for (int i = 0; i < count; ++i) {
+                    index = (index + direction + count) % count;
+                    if (!data->items[index].isSeparator) {
+                        data->hoveredIndex = index;
+                        InvalidateRect(hwnd, NULL, FALSE);
+                        break;
+                    }
+                }
+            }
+            return 0;
+        }
+        case WM_CLOSE:
+        case WM_CAPTURECHANGED:
+            data->running = false;
+            return 0;
+        case WM_DESTROY:
+            data->running = false;
+            CancelWindowAnimation(hwnd, false);
+            return 0;
         case WM_ERASEBKGND: return 1;
     }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -459,7 +510,7 @@ int ShowCustomPopupMenu(HWND hwndParent, int x, int y, const std::vector<PopupMe
         totalH += item.isSeparator ? 8 : 28;
     }
     
-    int menuW = 240;
+    int menuW = 280;
     int menuH = totalH;
     int menuX = x;
     int menuY = bottomAlign ? (y - menuH) : y;
@@ -484,11 +535,20 @@ int ShowCustomPopupMenu(HWND hwndParent, int x, int y, const std::vector<PopupMe
     
     SetCapture(hwndMenu);
     
-    ShowWindow(hwndMenu, SW_SHOW);
-    UpdateWindow(hwndMenu);
+    ShowAnimatedWindow(hwndMenu, SW_SHOWNOACTIVATE, 8, 110.0f);
     
     MSG msg;
-    while (data.running && GetMessageW(&msg, NULL, 0, 0)) {
+    WPARAM deferredCommand = 0;
+    while (data.running && GetDialogMessage(msg)) {
+        if (msg.hwnd == hwndParent && msg.message == WM_COMMAND &&
+            (LOWORD(msg.wParam) == IDM_FILE_CLOSE_ALL_TABS || LOWORD(msg.wParam) == IDM_FILE_CLOSE_TAB)) {
+            deferredCommand = msg.wParam;
+            break;
+        }
+        if (msg.message == WM_KEYDOWN && (msg.wParam == VK_ESCAPE || msg.wParam == VK_RETURN || msg.wParam == VK_UP || msg.wParam == VK_DOWN)) {
+            SendMessageW(hwndMenu, msg.message, msg.wParam, msg.lParam);
+            continue;
+        }
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
@@ -498,6 +558,7 @@ int ShowCustomPopupMenu(HWND hwndParent, int x, int y, const std::vector<PopupMe
     }
     
     DestroyWindow(hwndMenu);
+    if (deferredCommand) PostMessageW(hwndParent, WM_COMMAND, deferredCommand, 0);
     
     return data.resultId;
 }
@@ -505,7 +566,7 @@ int ShowCustomPopupMenu(HWND hwndParent, int x, int y, const std::vector<PopupMe
 struct SettingsControlBtn {
     RECT rect;
     std::wstring label;
-    int settingType; // 1: Auto-Close Braces, 2: Indent Guides, 3: Caret Line, 4: Whitespace, 5: Top Bar, 6: OK
+    int settingType; // 1: Braces, 2: Guides, 3: Whitespace, 4: Caret, 5: Top Bar, 6: OK, 7: Theme, 8: Animations
     int value;       // parameter value
 };
 
@@ -521,6 +582,7 @@ struct CustomSettingsData {
     bool running;
     bool openThemeFile;
     std::vector<SettingsControlBtn> buttons;
+    PaintBuffer paintBuffer;
 };
 
 LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -542,10 +604,7 @@ LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             RECT rc;
             GetClientRect(hwnd, &rc);
             
-            // Double buffer paint
-            HDC memDC = CreateCompatibleDC(hdc);
-            HBITMAP memBmp = CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
-            HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, memBmp);
+            HDC memDC = data->paintBuffer.Get(hdc, rc);
             
             // Background
             FillRectColor(memDC, rc, theme.popupBg);
@@ -632,10 +691,7 @@ LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             }
             
             SelectObject(memDC, oldFont);
-            BitBlt(hdc, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left, ps.rcPaint.bottom - ps.rcPaint.top, memDC, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
-            SelectObject(memDC, oldBmp);
-            DeleteObject(memBmp);
-            DeleteDC(memDC);
+            data->paintBuffer.Present(hdc, ps.rcPaint);
             EndPaint(hwnd, &ps);
             return 0;
         }
@@ -705,7 +761,12 @@ LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 else if (btn.settingType == 3) { data->tempShowWhitespace = (btn.value == 1); showWhitespace = data->tempShowWhitespace; updated = true; }
                 else if (btn.settingType == 4) { data->tempCaretStyleBlock = (btn.value == 1); caretStyleBlock = data->tempCaretStyleBlock; updated = true; }
                 else if (btn.settingType == 5) { data->tempShowTopBar = (btn.value == 1); showTopBar = data->tempShowTopBar; updated = true; }
-                else if (btn.settingType == 8) { data->tempEnableAnimations = (btn.value == 1); enableAnimations = data->tempEnableAnimations; updated = true; }
+                else if (btn.settingType == 8) {
+                    data->tempEnableAnimations = (btn.value == 1);
+                    enableAnimations = data->tempEnableAnimations;
+                    if (!enableAnimations) FinishUIAnimations(GetParent(hwnd));
+                    updated = true;
+                }
                 else if (btn.settingType == 7) { data->openThemeFile = true; data->running = false; } // Open Theme
                 else if (btn.settingType == 6) data->running = false; // OK
                 
@@ -730,6 +791,15 @@ LRESULT CALLBACK CustomSettingsProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             data->running = false;
             return 0;
         }
+        case WM_KEYDOWN:
+            if (wParam == VK_ESCAPE || wParam == VK_RETURN) data->running = false;
+            return 0;
+        case WM_ENTERSIZEMOVE:
+            CancelWindowAnimation(hwnd);
+            return 0;
+        case WM_DESTROY:
+            CancelWindowAnimation(hwnd, false);
+            return 0;
         case WM_ERASEBKGND: return 1;
     }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -814,11 +884,10 @@ void ShowSettingsDialog(HWND hwndParent) {
     
     if (hwndParent) EnableWindow(hwndParent, FALSE);
     
-    ShowWindow(hwndDlg, SW_SHOW);
-    UpdateWindow(hwndDlg);
+    ShowAnimatedWindow(hwndDlg, SW_SHOW, 10, 140.0f);
     
     MSG msg;
-    while (data.running && GetMessageW(&msg, NULL, 0, 0)) {
+    while (data.running && GetDialogMessage(msg)) {
         if (!IsWindow(hwndDlg)) {
             data.running = false;
             break;

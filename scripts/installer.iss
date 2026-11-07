@@ -21,8 +21,9 @@ ChangesAssociations=yes
 Source: "Velo.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Scintilla.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Lexilla.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "fonts\*"; DestDir: "{app}\fonts"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "icon\papirus\*"; DestDir: "{app}\icon\papirus"; Flags: ignoreversion
+Source: "fonts\*.ttf"; DestDir: "{app}\fonts"; Flags: ignoreversion
+Source: "icon\papirus\*.ico"; DestDir: "{app}\icon\papirus"; Flags: ignoreversion
+Source: "LICENSE.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Velo"; Filename: "{app}\Velo.exe"

@@ -14,7 +14,6 @@ void ApplySyntax();
 void SyncLineNumbers(bool rebuild = false);
 void UpdateLineNumberWidth();
 int GetTotalMarginWidth();
-void FindNextText(const std::string& query, bool forward);
 void UpdateSearchMatches();
 void UpdateCurrentMatchIndex();
 void SearchNext();
@@ -23,5 +22,12 @@ void SearchSelectAll();
 void SearchReplace();
 void SearchReplaceAll();
 void UpdateBraceMatch();
+void UpdateCustomIndicators(HWND hwndSci);
+void RunCurrentFile(HWND hwnd, bool runAsAdmin = false);
+void CleanupUserChoiceAssociations();
+LRESULT CALLBACK SearchEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK ReplaceEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK ScrollbarProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK SciSubProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 #endif // EDITOR_H

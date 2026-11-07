@@ -5,11 +5,9 @@
 #include "components/tabmanager.h"
 #include "components/ui_drawing.h"
 #include "components/animations.h"
+#include "components/shortcuts.h"
+#include "components/paint_buffer.h"
 #include <sstream>
-
-#pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
-
-#define WM_USER_DEFERRED_INIT (WM_USER + 100)
 
 // Define Global Variables
 HWND hwndMain = NULL;
@@ -68,18 +66,29 @@ bool zenBottomVisible = false;
 float zenTopProgress = 0.0f;
 float zenBottomProgress = 0.0f;
 
-ULONGLONG zenTopAnimStart = 0;
+LARGE_INTEGER zenTopAnimStartQPC = {};
 float zenTopAnimStartProgress = 0.0f;
 float zenTopAnimTargetProgress = 0.0f;
 
-ULONGLONG zenBottomAnimStart = 0;
+LARGE_INTEGER zenBottomAnimStartQPC = {};
 float zenBottomAnimStartProgress = 0.0f;
 float zenBottomAnimTargetProgress = 0.0f;
 
 bool isSavingSession = false;
+static PaintBuffer mainPaintBuffer;
+static HBRUSH editBackgroundBrush = NULL;
+static COLORREF editBackgroundColor = CLR_INVALID;
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
+        case WM_APP_ANIMATION_FRAME:
+            if (wParam) FinishUIAnimations(hwnd);
+            else UpdateUIAnimations(hwnd);
+            return 0;
+        case WM_DISPLAYCHANGE:
+            StopUIAnimationTimer();
+            StartUIAnimationTimer(hwnd);
+            break;
         case WM_COPYDATA: {
             COPYDATASTRUCT* cds = (COPYDATASTRUCT*)lParam;
             if (cds && cds->dwData == VELO_COPYDATA_TAB_TRANSFER && cds->lpData && cds->cbData >= sizeof(VeloTabTransferHeader)) {
@@ -174,6 +183,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             hwndHScroll = CreateWindowExW(0, L"DarkScrollbar", L"", WS_CHILD | WS_CLIPSIBLINGS, 0, 0, 0, 0, hwnd, NULL, GetModuleHandle(NULL), NULL);
             
             SetTimer(hwnd, 2, 100, NULL);
+            InitializeAppShortcuts();
             break;
         }
         case WM_TIMER: {
@@ -183,36 +193,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     InvalidateRect(hwnd, NULL, FALSE);
                 }
                 
-                static bool checkingFileChanges = false;
-                if (!checkingFileChanges && !IsIconic(hwnd)) {
-                    checkingFileChanges = true;
-                    std::wstring themePath = GetThemePath();
-                    for (size_t i = 0; i < tabs.size(); ++i) {
-                        if (tabs[i].filePath.empty()) continue;
-                        FILETIME diskTime = GetFileLastWriteTime(tabs[i].filePath);
-                        if (diskTime.dwLowDateTime == 0 && diskTime.dwHighDateTime == 0) continue; // File deleted or inaccessible
-                        
-                        if (CompareFileTime(&diskTime, &tabs[i].lastWriteTime) > 0) {
-                            // Update the timestamp BEFORE showing the dialog to prevent reentrancy
-                            tabs[i].lastWriteTime = diskTime;
-                            bool isTheme = !_wcsicmp(tabs[i].filePath.c_str(), themePath.c_str());
-                            if (isTheme || ShowCustomMessageBox(hwnd, L"This file has been modified outside the editor. Do you want to reload it?", L"File Modified", MB_YESNO) == IDYES) {
-                                if (i == activeTabIndex && hwndScintilla) {
-                                    int pos = Sci(SCI_GETCURRENTPOS);
-                                    LoadFileInActiveTab(hwnd, tabs[i].filePath.c_str());
-                                    Sci(SCI_GOTOPOS, pos);
-                                } else {
-                                    // Load into inactive tab
-                                    size_t oldActive = activeTabIndex;
-                                    SwitchToTab(hwnd, i);
-                                    LoadFileInActiveTab(hwnd, tabs[i].filePath.c_str());
-                                    SwitchToTab(hwnd, oldActive);
-                                }
-                            }
-                        }
-                    }
-                    checkingFileChanges = false;
-                }
+                CheckExternalFileChanges(hwnd);
             } else if (wParam == 1 || wParam == 2) {
                 POINT pt; GetCursorPos(&pt); ScreenToClient(hwndScintilla, &pt);
                 RECT rc; GetClientRect(hwndScintilla, &rc);
@@ -228,18 +209,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     ShowScrollbars(hwnd);
                 }
             } else if (wParam == 4) {
-                UpdateZenAnimations(hwnd);
-            } else if (wParam == 5) {
-                UpdateTabAnimations(hwnd);
+                UpdateUIAnimations(hwnd);
             }
             if (zenMode) {
                 POINT pt; GetCursorPos(&pt); ScreenToClient(hwnd, &pt);
-                RECT rc; GetClientRect(hwnd, &rc);
-                if (!zenTopVisible && pt.y <= 5) TriggerZenTopAnimation(hwnd, true);
-                else if (zenTopVisible && pt.y > 75) TriggerZenTopAnimation(hwnd, false);
-                
-                if (!zenBottomVisible && pt.y >= rc.bottom - 5) TriggerZenBottomAnimation(hwnd, true);
-                else if (zenBottomVisible && pt.y < rc.bottom - 45) TriggerZenBottomAnimation(hwnd, false);
+                UpdateZenHover(hwnd, pt);
             }
             break;
         }
@@ -277,6 +251,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             else if (id == IDM_FILE_SAVE_AS) DoFileSaveAs(hwnd);
             else if (id == IDM_FILE_CLOSE_TAB) CloseTab(hwnd, activeTabIndex);
+            else if (id == IDM_FILE_CLOSE_ALL_TABS) CloseAllTabs(hwnd);
             else if (id == IDM_FILE_EXIT) PostMessage(hwnd, WM_CLOSE, 0, 0);
             else if (id == IDM_EDIT_UNDO) Sci(SCI_UNDO);
             else if (id == IDM_EDIT_REDO) Sci(SCI_REDO);
@@ -305,9 +280,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_CTLCOLOREDIT: {
             if ((HWND)lParam == hwndSearchEdit || (HWND)lParam == hwndReplaceEdit || (HWND)lParam == hwndTabRenameEdit) {
                 SetTextColor((HDC)wParam, theme.textNormal); SetBkColor((HDC)wParam, theme.bg);
-                static HBRUSH hbrBg = NULL;
-                if (hbrBg) DeleteObject(hbrBg);
-                hbrBg = CreateSolidBrush(theme.bg); return (INT_PTR)hbrBg;
+                if (!editBackgroundBrush || editBackgroundColor != theme.bg) {
+                    if (editBackgroundBrush) DeleteObject(editBackgroundBrush);
+                    editBackgroundBrush = CreateSolidBrush(theme.bg);
+                    editBackgroundColor = theme.bg;
+                }
+                return (INT_PTR)editBackgroundBrush;
             }
             break;
         }
@@ -328,8 +306,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             RECT pad = GetPad(hwnd);
             int topDragH = showTopBar ? 70 : 35;
-            if (pt.y >= pad.top && pt.y < pad.top + topDragH && HitTest(hwnd, pt) == HOVER_NONE) return HTCAPTION;
-            if (pt.y >= rc.bottom - pad.bottom - 24 && pt.y < rc.bottom && HitTest(hwnd, pt) == HOVER_NONE) return HTCAPTION;
+            int topOffset = GetTopBarOffset(), bottomOffset = GetBottomBarOffset();
+            if (pt.y >= pad.top + topOffset && pt.y < pad.top + topOffset + topDragH && HitTest(hwnd, pt) == HOVER_NONE) return HTCAPTION;
+            if (pt.y >= rc.bottom - pad.bottom - 24 + bottomOffset && pt.y < rc.bottom - pad.bottom && HitTest(hwnd, pt) == HOVER_NONE) return HTCAPTION;
             return HTCLIENT;
         }
         case WM_SETCURSOR: {
@@ -356,14 +335,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             POINT pt = { (int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam) };
             HoverElement newHover = HitTest(hwnd, pt);
             
-            if (zenMode) {
-                RECT rc; GetClientRect(hwnd, &rc);
-                if (!zenTopVisible && pt.y <= 5) TriggerZenTopAnimation(hwnd, true);
-                else if (zenTopVisible && pt.y > 75) TriggerZenTopAnimation(hwnd, false);
-                
-                if (!zenBottomVisible && pt.y >= rc.bottom - 5) TriggerZenBottomAnimation(hwnd, true);
-                else if (zenBottomVisible && pt.y < rc.bottom - 45) TriggerZenBottomAnimation(hwnd, false);
-            }
+            UpdateZenHover(hwnd, pt);
             
             if (GetCapture() == hwnd && pressedElement >= HOVER_TAB_BASE && pressedElement < HOVER_TAB_CLOSE_BASE) {
                 POINT ptScreen; GetCursorPos(&ptScreen);
@@ -379,7 +351,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 }
 
                 int dragIdx = pressedElement - HOVER_TAB_BASE;
-                int dragW = GetTabWidth(dragIdx);
+                const auto tabLayout = GetTabLayout();
+                if (dragIdx >= (int)tabLayout.size()) break;
+                int dragW = tabLayout[dragIdx].width;
                 int dragVisualLeft = pt.x - dragGrabOffset;
                 int dragVisualRight = dragVisualLeft + dragW;
                 
@@ -387,12 +361,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 RECT rc2; GetClientRect(hwnd, &rc2); RECT pad2 = GetPad(hwnd);
                 int sx = pad2.left + 70, cx = sx;
                 // Find the logical left edge of the dragged tab's current slot
-                for (int t = 0; t < dragIdx; ++t) cx += GetTabWidth(t);
+                for (int t = 0; t < dragIdx; ++t) cx += tabLayout[t].width;
                 
                 // Check swap with right neighbor: trigger when dragged tab's right edge passes neighbor's center
                 if (dragIdx + 1 < (int)tabs.size()) {
                     int rightLeft = cx + dragW;
-                    int rightW = GetTabWidth(dragIdx + 1);
+                    int rightW = tabLayout[dragIdx + 1].width;
                     int rightMid = rightLeft + rightW / 2;
                     if (dragVisualRight > rightMid) {
                         std::swap(tabs[dragIdx], tabs[dragIdx + 1]);
@@ -403,7 +377,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 }
                 // Check swap with left neighbor: trigger when dragged tab's left edge passes neighbor's center
                 if (dragIdx > 0) {
-                    int leftW = GetTabWidth(dragIdx - 1);
+                    int leftW = tabLayout[dragIdx - 1].width;
                     int leftLeft = cx - leftW;
                     int leftMid = leftLeft + leftW / 2;
                     if (dragVisualLeft < leftMid) {
@@ -435,7 +409,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
-        case WM_MOUSELEAVE: { hoverElement = HOVER_NONE; UpdateUI(hwnd); break; }
+        case WM_MOUSELEAVE: {
+            hoverElement = HOVER_NONE;
+            POINT pt; GetCursorPos(&pt); ScreenToClient(hwnd, &pt);
+            UpdateZenHover(hwnd, pt);
+            UpdateUI(hwnd);
+            break;
+        }
         case WM_LBUTTONDOWN: {
             POINT pt = { (int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam) }; pressedElement = HitTest(hwnd, pt);
             clickPos = pt;
@@ -443,7 +423,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 RECT rc2; GetClientRect(hwnd, &rc2); RECT pad2 = GetPad(hwnd);
                 int sx = pad2.left + 70, cx = sx;
                 int tabIdx = pressedElement - HOVER_TAB_BASE;
-                for (int t = 0; t < tabIdx; ++t) cx += GetTabWidth(t);
+                const auto tabLayout = GetTabLayout();
+                for (int t = 0; t < tabIdx && t < (int)tabLayout.size(); ++t) cx += tabLayout[t].width;
                 dragGrabOffset = pt.x - cx;
             }
             UpdateUI(hwnd); SetCapture(hwnd); break;
@@ -514,58 +495,41 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_PAINT: {
             PAINTSTRUCT ps; HDC hdc = BeginPaint(hwnd, &ps);
             RECT rc; GetClientRect(hwnd, &rc); RECT pad = GetPad(hwnd);
+            if (rc.right <= 0 || rc.bottom <= 0) { EndPaint(hwnd, &ps); return 0; }
             
-            static HDC s_memDC = NULL;
-            static HBITMAP s_memBmp = NULL;
-            static HBITMAP s_oldBmp = NULL;
-            static int s_memW = 0, s_memH = 0;
-            
-            if (!s_memDC || s_memW != rc.right || s_memH != rc.bottom) {
-                if (s_memDC) {
-                    SelectObject(s_memDC, s_oldBmp);
-                    DeleteObject(s_memBmp);
-                    DeleteDC(s_memDC);
-                }
-                s_memDC = CreateCompatibleDC(hdc);
-                s_memBmp = CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
-                s_oldBmp = (HBITMAP)SelectObject(s_memDC, s_memBmp);
-                s_memW = rc.right;
-                s_memH = rc.bottom;
-            }
-            HDC memDC = s_memDC;
-            FillRectColor(memDC, rc, theme.editorBg);
-            
-            int fullTopBarH = showTopBar ? 70 : 36;
-            int topBarH = fullTopBarH;
-            if (zenMode) topBarH = (int)(fullTopBarH * zenTopProgress + 0.5f);
+            HDC memDC = mainPaintBuffer.Get(hdc, rc);
+            int paintState = SaveDC(memDC);
+            IntersectClipRect(memDC, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right, ps.rcPaint.bottom);
+            FillRectColor(memDC, ps.rcPaint, theme.editorBg);
+            int topBarH = GetTopBarHeight();
 
-            if (!zenMode || zenTopProgress > 0.001f) {
-                int topOffset = zenMode ? (int)((zenTopProgress - 1.0f) * fullTopBarH) : 0;
-                POINT oldOrg;
-                if (topOffset != 0) SetWindowOrgEx(memDC, 0, -topOffset, &oldOrg);
-                PaintTopBar(hwnd, memDC, rc);
-                if (showTopBar) PaintHeaderBar(hwnd, memDC, rc);
-                if (topOffset != 0) SetWindowOrgEx(memDC, oldOrg.x, oldOrg.y, NULL);
+            if (topBarH > 0) {
+                int barState = SaveDC(memDC);
+                SetWindowOrgEx(memDC, 0, -GetTopBarOffset(), NULL);
+                RECT tabBar = {0, pad.top, rc.right, pad.top + 36};
+                RECT header = {0, pad.top + 36, rc.right, pad.top + 70};
+                if (RectVisible(memDC, &tabBar)) PaintTopBar(hwnd, memDC, rc);
+                if (showTopBar && RectVisible(memDC, &header)) PaintHeaderBar(hwnd, memDC, rc);
+                RestoreDC(memDC, barState);
             }
             int offset = 0;
-            if (searchVisible && (!zenMode || zenTopProgress > 0.001f)) {
-                PaintSearchBar(hwnd, memDC, rc);
+            if (searchVisible) {
                 bool inlineReplace = (rc.right - pad.right - pad.left > 1230);
                 offset = replaceVisible ? (inlineReplace ? 36 : 72) : 36;
+                RECT searchBar = {0, pad.top + topBarH, rc.right, pad.top + topBarH + offset};
+                if (RectVisible(memDC, &searchBar)) PaintSearchBar(hwnd, memDC, rc);
             }
-            int topMargin = (zenMode && zenTopProgress < 0.001f) ? 0 : EDITOR_TOP_MARGIN;
+            int topMargin = zenMode ? (int)(EDITOR_TOP_MARGIN * zenTopProgress + 0.5f) : EDITOR_TOP_MARGIN;
             RECT rcTopGap = { pad.left, pad.top + topBarH + offset, rc.right - pad.right, pad.top + topBarH + offset + topMargin };
             FillRectColor(memDC, rcTopGap, theme.editorBg);
             
-            int fullBottomBarH = 24;
-            int bottomBarH = fullBottomBarH;
-            if (zenMode) bottomBarH = (int)(fullBottomBarH * zenBottomProgress + 0.5f);
-            
-            if (!zenMode || zenBottomProgress > 0.001f) {
-                int bottomOffset = zenMode ? (int)((1.0f - zenBottomProgress) * 24.0f) : 0;
-                POINT oldOrg;
-                SetWindowOrgEx(memDC, 0, -(rc.bottom - pad.bottom - 24 + bottomOffset), &oldOrg);
-                PaintStatusBar(hwnd, memDC, rc); SetWindowOrgEx(memDC, oldOrg.x, oldOrg.y, NULL);
+            int bottomBarH = GetBottomBarHeight();
+            if (bottomBarH > 0) {
+                int statusState = SaveDC(memDC);
+                SetWindowOrgEx(memDC, 0, -(rc.bottom - pad.bottom - bottomBarH), NULL);
+                RECT statusBar = {0, 0, rc.right, 24};
+                if (RectVisible(memDC, &statusBar)) PaintStatusBar(hwnd, memDC, rc);
+                RestoreDC(memDC, statusState);
             }
             
             if (pad.left > 1) FillRectColor(memDC, { 0, pad.top + topBarH + offset, pad.left, rc.bottom - pad.bottom - bottomBarH }, theme.editorBg);
@@ -579,45 +543,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 FillRectColor(memDC, { rc.right - 1, 0, rc.right, rc.bottom }, theme.border); 
             }
             
-            BitBlt(hdc, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left, ps.rcPaint.bottom - ps.rcPaint.top, memDC, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
+            RestoreDC(memDC, paintState);
+            mainPaintBuffer.Present(hdc, ps.rcPaint);
             EndPaint(hwnd, &ps); return 0;
         }
         case WM_SIZE: {
-            if (hwndScintilla) {
-                RECT rc; GetClientRect(hwnd, &rc); RECT pad = GetPad(hwnd);
-                bool inlineReplace = (rc.right - pad.right - pad.left > 1230);
-                int offset = 0;
-                if (searchVisible) {
-                    offset = replaceVisible ? (inlineReplace ? 36 : 72) : 36;
-                }
-                int fullTopBarH = showTopBar ? 70 : 36;
-                int topBarH = fullTopBarH;
-                if (zenMode) topBarH = (int)(fullTopBarH * zenTopProgress + 0.5f);
-                int topH = pad.top + topBarH + offset + (zenMode && zenTopProgress < 0.001f ? 0 : EDITOR_TOP_MARGIN);
-                int ew = rc.right - pad.left - pad.right;
-                int fullBottomBarH = 24;
-                int bottomBarH = fullBottomBarH;
-                if (zenMode) bottomBarH = (int)(fullBottomBarH * zenBottomProgress + 0.5f);
-                int eh = rc.bottom - topH - bottomBarH - pad.bottom;
-                SetWindowPos(hwndScintilla, NULL, pad.left, topH, ew, eh, SWP_NOZORDER);
-
-                if (searchVisible) {
-                    int searchY = pad.top + topBarH + 10;
-                    SetWindowPos(hwndSearchEdit, NULL, pad.left + 9, searchY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
-                    if (replaceVisible) {
-                        int replaceY = pad.top + topBarH + (inlineReplace ? 0 : 36) + 10;
-                        int replaceX = pad.left + 9 + (inlineReplace ? 412 : 0);
-                        SetWindowPos(hwndReplaceEdit, NULL, replaceX, replaceY, 330, 17, SWP_NOZORDER | SWP_SHOWWINDOW);
-                    } else {
-                        ShowWindow(hwndReplaceEdit, SW_HIDE);
-                    }
-                } else {
-                    ShowWindow(hwndSearchEdit, SW_HIDE);
-                    ShowWindow(hwndReplaceEdit, SW_HIDE);
-                }
-                SyncScrollbars();
-                RedrawWindow(hwnd, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
-            }
+            LayoutEditor(hwnd);
+            InvalidateRect(hwnd, NULL, FALSE);
             break;
         }
         case WM_NOTIFY: {
@@ -730,6 +662,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         }
         case WM_DESTROY: {
+            ShutdownAppShortcuts();
+            StopUIAnimationTimer();
+            mainPaintBuffer.Reset();
+            if (editBackgroundBrush) DeleteObject(editBackgroundBrush);
+            editBackgroundBrush = NULL;
             if (hUIFont) DeleteObject(hUIFont);
             if (hIconFont) DeleteObject(hIconFont);
             if (hWindowIconFont) DeleteObject(hWindowIconFont);
@@ -906,7 +843,12 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nCmd) {
         SetFocus(hwndScintilla);
     }
     MSG msg = { };
-    while (GetMessageW(&msg, NULL, 0, 0)) {
+    HACCEL appAccelerators = CreateAppAccelerators();
+    while (GetMessageW(&msg, NULL, 0, 0) > 0) {
+        if (appAccelerators && IsWindowEnabled(hwnd) &&
+            (msg.hwnd == hwnd || IsChild(hwnd, msg.hwnd)) && TranslateAcceleratorW(hwnd, appAccelerators, &msg)) {
+            continue;
+        }
         if (msg.message == WM_KEYDOWN && msg.wParam == VK_F11) {
             ToggleZenMode(hwnd);
             continue;
@@ -931,13 +873,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nCmd) {
                     if (shift) DoFileSaveAs(hwnd);
                     else DoFileSave(hwnd);
                     continue;
-                case 'W': 
-                    if (shift) {
-                        CloseAllTabs(hwnd);
-                    } else {
-                        CloseTab(hwnd, activeTabIndex);
-                    }
-                    continue;
                 case 'Z': Sci(SCI_UNDO); continue;
                 case 'Y': Sci(SCI_REDO); continue;
                 case 'F': TriggerSearchDialog(hwnd); continue;
@@ -946,6 +881,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nCmd) {
         }
         TranslateMessage(&msg); DispatchMessageW(&msg);
     }
+    if (appAccelerators) DestroyAcceleratorTable(appAccelerators);
     UnloadFonts();
     if (hMutex) CloseHandle(hMutex);
     CoUninitialize();

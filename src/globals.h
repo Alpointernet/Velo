@@ -72,6 +72,7 @@
 #define IDM_FILE_SAVE 1003
 #define IDM_FILE_SAVE_AS 1005
 #define IDM_FILE_CLOSE_TAB 1006
+#define IDM_FILE_CLOSE_ALL_TABS 1007
 #define IDM_FILE_EXIT 1004
 #define IDM_EDIT_UNDO 2001
 #define IDM_EDIT_REDO 2002
@@ -79,7 +80,6 @@
 #define IDM_TOGGLE_LINES 3002
 #define IDM_SETTINGS_DIALOG 3003
 #define IDM_TOGGLE_TOPBAR 3004
-#define IDM_RUN_FILE 5001
 #define IDM_LANG_BASE 4000
 #define CUSTOM_SB_SIZE 10
 #define EDITOR_TOP_MARGIN 6
@@ -93,15 +93,16 @@ struct Tab {
     int eolMode = 0; // SC_EOL_CRLF
     FILETIME lastWriteTime = {0, 0};
     std::string manualLanguage = ""; // empty = auto-detect from extension
+    bool externalChangePending = false;
+    bool reloadFailed = false;
 
     // Tab animation state
     float animProgress = 1.0f;
+    float animStartProgress = 1.0f;
     LARGE_INTEGER animStartQPC = {0, 0};
     bool isOpening = false;
     bool isClosing = false;
 };
-
-FILETIME GetFileLastWriteTime(const std::wstring& path);
 
 enum HoverElement {
     HOVER_NONE, HOVER_MINIMIZE, HOVER_MAXIMIZE, HOVER_CLOSE, HOVER_UNDO, HOVER_REDO, HOVER_ADD_TAB,
@@ -109,33 +110,8 @@ enum HoverElement {
     HOVER_SEARCH_PREV, HOVER_SEARCH_NEXT, HOVER_SEARCH_SELECT_ALL, HOVER_SEARCH_REPLACE_TOGGLE,
     HOVER_SEARCH_CLOSE, HOVER_REPLACE_NEXT, HOVER_REPLACE_ALL,
     HOVER_STATUS_EOL, HOVER_STATUS_LANG,
+    HOVER_FILE_RELOAD, HOVER_FILE_KEEP_EDITS,
     HOVER_FILE_NAME, HOVER_PATH_PART_BASE = 300
-};
-
-struct DlgButton {
-    RECT rect;
-    std::wstring label;
-    int result;
-};
-
-struct CustomDialogData {
-    HWND hwndParent;
-    std::wstring message;
-    std::wstring title;
-    UINT type;
-    std::vector<DlgButton> buttons;
-    int hoveredButtonIndex;
-    int pressedButtonIndex;
-    int result;
-    bool running;
-};
-
-struct PopupMenuItem {
-    std::wstring label;
-    int id;
-    bool isSeparator;
-    bool isChecked;
-    std::wstring shortcut;
 };
 
 // Global Variables
@@ -150,16 +126,6 @@ extern size_t activeTabIndex;
 extern HoverElement hoverElement, pressedElement;
 extern int dragGrabOffset;
 extern WNDPROC oldSearchEditProc, oldReplaceEditProc, oldSciProc, oldTabRenameEditProc;
-LRESULT CALLBACK SearchEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-LRESULT CALLBACK ReplaceEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-LRESULT CALLBACK TabRenameEditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-LRESULT CALLBACK ScrollbarProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-LRESULT CALLBACK SciSubProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-void RunCurrentFile(HWND hwnd, bool runAsAdmin = false);
-void ToggleZenMode(HWND hwnd);
-void TriggerZenTopAnimation(HWND hwnd, bool show);
-void TriggerZenBottomAnimation(HWND hwnd, bool show);
-void CleanupUserChoiceAssociations();
 
 #define VELO_COPYDATA_FILE_OPEN   0x56454C4F // 'VELO'
 #define VELO_COPYDATA_TAB_TRANSFER 0x56454C46 // 'VELF'
@@ -171,9 +137,6 @@ struct VeloTabTransferHeader {
     int eolMode;
     int textSize;
 };
-
-bool DetachTabToNewWindow(HWND hSource, size_t tabIdx);
-bool TransferTabToWindow(HWND hSource, HWND hTarget, size_t tabIdx);
 
 extern int currentMatchIndex;
 extern int totalMatchesCount;
@@ -204,23 +167,10 @@ extern bool zenTopVisible;
 extern bool zenBottomVisible;
 extern float zenTopProgress;
 extern float zenBottomProgress;
-extern ULONGLONG zenTopAnimStart, zenBottomAnimStart;
+extern LARGE_INTEGER zenTopAnimStartQPC, zenBottomAnimStartQPC;
 extern float zenTopAnimStartProgress, zenTopAnimTargetProgress;
 extern float zenBottomAnimStartProgress, zenBottomAnimTargetProgress;
 extern int tabRenameIndex;
 extern bool isSavingSession;
-
-// Utilities
-void FillRectColor(HDC hdc, const RECT& rc, COLORREF color);
-RECT GetPad(HWND h);
-
-// Session Persistence
-void SaveSession();
-void LoadSession(HWND hwndParent);
-
-void SearchNext(HWND hwndScintilla);
-void SearchPrev(HWND hwndScintilla);
-
-void UpdateCustomIndicators(HWND hwndScintilla);
 
 #endif // GLOBALS_H
