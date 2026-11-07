@@ -10,6 +10,11 @@
 obj/
 output/
 
+# Local build and installer tooling
+*.bat
+*.cmd
+/scripts/
+
 # Generated icon (built from app.png)
 icon/app.ico
 

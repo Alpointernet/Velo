@@ -51,7 +51,9 @@ Most text editors are either too simple or too bloated, which makes it harder to
 - **[Inno Setup 6](https://jrsoftware.org/isdl.php)** to create the installer.
 
 ### Compile
-Run or double-click the root launcher:
+Build and installer helpers (`*.bat`, `*.cmd`, and `scripts/`) are maintained locally and excluded from Git. The commands below apply to a local checkout with those helpers installed.
+
+Run or double-click the local root launcher:
 ```bat
 build.bat
 ```
@@ -87,9 +89,9 @@ Setting `NOPAUSE=1` provides the same behavior. Installer builds in this mode al
 ## Project Structure
 
 ```
-build.bat           → Application build launcher
-create_setup.bat    → Installer build launcher
-clean.bat           → Generated-file cleanup launcher
+build.bat           → Local application build launcher (ignored)
+create_setup.bat     → Local installer build launcher (ignored)
+clean.bat           → Local generated-file cleanup launcher (ignored)
 src/
   main.cpp          → Application entry point and window message handling
   globals.h         → Shared state, settings, and command identifiers
@@ -106,7 +108,7 @@ src/
     fonts.*         → Private runtime fonts
 fonts/              → Editor and interface font assets
 icon/               → Application image and file-type icons
-scripts/            → Canonical build, installer, and cleanup implementation
+scripts/            → Local build, installer, and cleanup implementation (ignored)
 obj/                → Generated intermediates (ignored)
 output/             → Generated installer (ignored)
 ```
